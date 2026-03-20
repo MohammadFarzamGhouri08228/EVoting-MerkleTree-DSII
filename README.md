@@ -1,50 +1,286 @@
-# Description
-A secure electronic voting system that allows a user to register for voting, vote for a candidate, validate votes of a voter, and display and verify vote tally.
+# E-VoteVerify+
+### A Merkle-Tree Based Tamper-Evident Voting Verification System
 
-Includes support for confidentiality and integrity protection of messages exchanged between components and implements routines to read and write sensitive data like voter IDs and votes to an encrypted file.
+> **This project is not merely a voting application; it is a study of tamper-evident data structures for secure verification.**
 
-The program creates the following data structures to store votes, vote tallies, and voter ids securely:
-1. Voter ID dictionary: Keeps track of the voter IDs of all registered users
-2. Votes dictionary: Keeps track of all the votes cast. The key is the candidate and its value are a list of all the voter ids of the voters that have cast their vote to that candidate
-3. Merkle tree: A merkle tree file is created for each candidate and keeps track of all the votes cast for that candidate. Therefore, the number of merkle trees = number of candidates
+Developed as a **Data Structures II** final project. The focus is on applying core DS concepts — hash tables and Merkle trees — to build a system where any voter can cryptographically verify their ballot was counted, without exposing anyone else's vote.
 
-The program consists of the following components:
-1. Menu providing options to the user to choose a particular action. There are 6 options provided to the user:
-2. Register voter: It will request the user for an identification number unique to the user which no one other than the user knows. Then it will check if the voter is already registered. If already registered, it requests the user to select the other options. Else, it calls the register function passing the unique ID. In the register function, the voter ID is generated which in this case is the hash of the unique id. The voter ID is also stored in a voter ID dictionary where the key is the unique ID and value is the corresponding voter ID. This voter ID is then returned to the user.
-3. Vote: The program asks the user for the voter ID. It then checks if the voter ID is valid by checking the voter ID dictionary. It also checks if the user has already voted by querying the vote dictionary which keeps track of the votes given to the dictionary. If these two conditions are not satisfied, it means the voter is voting for the first time and the program then prompts the user to choose the candidate. Once a valid candidate is chosen, a vote function is called passing the voter ID and candidate. The function creates a merkle tree using the voter ID passed and stores in that candidate’s merkle tree file.
-4. Validate votes: The program can validate the vote of a voter and return the voting trail. The voter id of the user is requested which is then sent to the validate function. The validate function first fetches the candidate to whom the vote was cast, decrypts the corresponding merkle tree file, and stores the tree in a dictionary. The dictionary is then iterated to check if the voter ID is present in the dictionary and stores the hashes of all the tree nodes traversed in a list. This list serves as the voting trail and is returned to the user.
-5. Display vote tally: The program displays the votes cast for each candidate using the votes dictionary
-6. Verify vote tally: The program requests the candidate number for whom the vote tally must be verified and calls the printMerkleTree with this candidate number. The function fetches the merkle tree of that candidate, decrypts, and prints it in a user-friendly manner.
+---
 
-Confidentiality is guaranteed by using AES-128 for encryption and decryption of the local files generated and integrity is guaranteed by using base64 encoding and SHA256 hashes.
+## Project Idea
 
-# To Run the Program
-`python3 votingsystem.py`
+A voter casts a ballot. The ballot gets hashed and stored as a leaf in a global Merkle Tree. The voter receives a receipt ID. Later, they can use that receipt ID to:
 
-# External Modules used
-1. AES module from pycryptodome library: Used for generating the AES 128 cipher to encrypt and decrypt the above data structures stored    in separate files (https://pypi.org/project/pycryptodome/)
-2. Random module from pycryptodome: Use to generate random numbers for generating keys and IVs for AES 128 cipher.
-3. Hashlib: For generating SHA-256 hashes used for creating the unique voter ID and building the merkle tree
-4. Binascii and base64: For bas64 encoding and decoding of the above data structures after they have been encrypted to make it easy for    decryption.
+1. Generate a **Merkle proof** — the set of sibling hashes along the path from their ballot to the root
+2. **Verify** that proof by recomputing the root and comparing it to the public root
+3. Detect **tampering** — if any ballot is modified, the root changes and old proofs break
 
-# Screenshots
-Registering voter with unique identification number 123, vote for candidate 1 and display vote tally
-![Screenshot 1](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-1.png)
+This demonstrates two fundamental data structures working together:
 
-Registering voter with unique identification number 345, vote for candidate 2 and display vote tally
-![Screenshot 2](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-2.png)
+| Data Structure | Role in This Project |
+|---|---|
+| Hash Table / Dictionary | Voter registry, receipt-to-index lookup, duplicate vote prevention |
+| Merkle Tree | Stores all ballot hashes, generates inclusion proofs, detects tampering |
 
-Display vote trails and vote tally audits for users with unique identification numbers 123 and 345
-![Screenshot 3](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-3.png)
+---
 
-Register another user with a unique identification number as 456, vote for candidate 1, display vote tally and vote tally audit for candidate 1
-![Screenshot 4](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-4.png)
+## Core Data Structures & Complexity
 
-Display vote trail for the user with a unique identification number 456
-![Screenshot 5](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-5.png)
+### Hash Table (Voter Registry)
+- Insert voter: **O(1)** average
+- Check if already voted: **O(1)** average
+- Look up ballot index by receipt ID: **O(1)** average
 
-Error messages when registering an already registered user, voting for invalid voter ID and a voter voting again
-![Screenshot 6](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-6.png)
+### Merkle Tree
+- Build tree from n ballots: **O(n)**
+- Generate inclusion proof: **O(log n)**
+- Verify proof: **O(log n)**
+- Tamper propagation up the tree: **O(log n)**
 
-Detection of modification of votes files when vote tally is displayed. This serves as an integrity check.
-![Screenshot 7](https://github.com/droid76/Secure-Electronic-Voting-System/blob/master/Screenshots/Screenshot-7.png)
+---
+
+## Features
+
+- Voter registration simulation
+- Vote casting with duplicate prevention
+- Ballot hashing using SHA-256 (receipt ID + candidate + salt + timestamp)
+- Global Merkle Tree construction (one tree for all ballots)
+- Merkle proof generation by receipt ID
+- Merkle proof verification (recomputes root from proof)
+- Tampering simulation and detection
+- Terminal visualization of tree levels and proof path
+- Scripted demo for presentation
+- Basic test suite
+
+---
+
+## File Structure
+
+```
+EVoting-MerkleTree-DSII/
+│
+├── main.py              # Entry point — launches CLI or demo
+├── votingsystem.py      # Central controller — orchestrates all workflows
+├── merkletree.py        # Merkle Tree implementation (build, proof, verify, visualize)
+├── ballot.py            # Ballot class — hashing and record representation
+├── voter_registry.py    # Hash table layer — voter storage and receipt-to-index mapping
+├── utils.py             # SHA-256 helper, salt generator, timestamp, formatting
+├── demo.py              # Scripted demo scenario for presentation
+│
+├── data/                # Optional sample voter/ballot datasets (JSON)
+├── tests/               # Unit tests for each module
+└── README.md
+```
+
+---
+
+## Demo Workflow
+
+```
+1. Register sample voters
+2. Cast votes (each creates a hashed ballot)
+3. Build the global Merkle Tree from all ballot hashes
+4. Display the root hash
+5. Select one receipt ID
+6. Generate and display the Merkle proof path
+7. Verify the proof — confirm it matches the root
+8. Tamper with one ballot
+9. Show that verification now fails / root has changed
+```
+
+---
+
+## How to Run
+
+```bash
+python main.py
+```
+
+Or run the scripted demo directly:
+
+```bash
+python demo.py
+```
+
+---
+
+## Development Plan
+
+The project is divided into **5 phases** across **3 team members**.
+
+---
+
+## Phase 1 — Foundation & Data Layer
+**Goal:** Establish core data representations and utility functions.
+
+**Owner: Team Member 1**
+
+### Steps:
+- [ ] Set up project folder structure (all files, empty stubs)
+- [ ] Implement `utils.py`
+  - SHA-256 hash helper function
+  - Random salt generator
+  - Timestamp generator
+  - Pretty-print formatting helpers
+- [ ] Implement `ballot.py`
+  - `Ballot` class with fields: `receipt_id`, `candidate`, `salt`, `timestamp`
+  - `to_string()` — canonical string representation for hashing
+  - `to_hash()` — SHA-256 hash of the ballot string
+  - `to_dict()` — for display and serialization
+- [ ] Implement `voter_registry.py`
+  - `VoterRegistry` class backed by Python dictionaries (hash tables)
+  - `register_voter(voter_id)` — add a voter as eligible
+  - `has_voted(voter_id)` — check duplicate vote
+  - `mark_voted(voter_id)` — update voter status
+  - `store_receipt(receipt_id, ballot_index)` — map receipt to position
+  - `get_ballot_index(receipt_id)` — O(1) lookup
+  - Comments explaining hash table behavior and O(1) complexity
+
+**Deliverable:** Working `ballot.py`, `voter_registry.py`, and `utils.py` with a small test script confirming ballot hashing and registry lookups work correctly.
+
+---
+
+## Phase 2 — Merkle Tree Construction
+**Goal:** Implement the full Merkle Tree from scratch.
+
+**Owner: Team Member 2**
+
+### Steps:
+- [ ] Implement `merkletree.py`
+  - `MerkleTree` class
+  - Accept a list of leaf hashes on initialization
+  - `build()` — construct tree bottom-up, level by level, store all levels
+  - `get_root()` — return the final root hash
+  - Handle odd number of leaves (duplicate last leaf)
+  - `print_tree()` — display all levels in a readable terminal format
+  - Comment each method with its time complexity
+
+**Example terminal output for `print_tree()`:**
+```
+Level 0 (Root):
+  [ABCD1234...]
+
+Level 1:
+  [AAA...] [BBB...]
+
+Level 2 (Leaves):
+  [h0] [h1] [h2] [h3]
+```
+
+**Deliverable:** `merkletree.py` that correctly builds a tree from sample hashes and prints all levels clearly.
+
+---
+
+## Phase 3 — Proof Generation & Verification
+**Goal:** Implement Merkle proof generation, verification, and proof visualization.
+
+**Owner: Team Member 3**
+
+### Steps:
+- [ ] Add `generate_proof(leaf_index)` to `MerkleTree`
+  - Walk up from the leaf level to the root
+  - At each level, collect the sibling hash and its direction (`left` or `right`)
+  - Return a list of `(sibling_hash, direction)` tuples
+- [ ] Add `verify_proof(leaf_hash, proof, root)` to `MerkleTree`
+  - Recompute the root by combining `leaf_hash` with each sibling in order
+  - Return `True` if the result matches `root`, `False` otherwise
+- [ ] Add `print_proof_path(receipt_id, proof)` to visualization
+  - Display the ballot being verified
+  - Show each step: current hash + sibling hash → combined → next hash
+  - Mark the final result as MATCH or MISMATCH
+
+**Example proof path output:**
+```
+Verifying receipt: RCP-00042
+  Step 1: [ballot_hash] + [sibling] → [parent_hash]
+  Step 2: [parent_hash] + [sibling] → [grandparent_hash]
+  Step 3: [grandparent_hash] + [sibling] → [root_hash]
+Result: ROOT MATCH — Vote verified successfully.
+```
+
+**Deliverable:** Working proof generation and verification methods, plus clear terminal visualization of the proof path.
+
+---
+
+## Phase 4 — System Integration & CLI
+**Goal:** Connect all modules together into a working system with a usable interface.
+
+**Owner: Team Member 1 + Team Member 2 (joint)**
+
+### Steps:
+- [ ] Implement `votingsystem.py`
+  - `VotingSystem` class
+  - `register_voter(voter_id)` — delegates to `VoterRegistry`
+  - `cast_vote(voter_id, candidate)` — creates `Ballot`, hashes it, stores receipt
+  - `build_tree()` — collects all ballot hashes, builds `MerkleTree`
+  - `generate_proof(receipt_id)` — looks up ballot index, delegates to `MerkleTree`
+  - `verify_vote(receipt_id)` — runs proof, prints result
+  - `tamper_vote(receipt_id, new_candidate)` — modifies a ballot, rebuilds or marks dirty
+  - `display_summary()` — show vote counts and root hash
+- [ ] Implement `main.py`
+  - Simple numbered menu: Register / Vote / Build Tree / Verify / Tamper / Demo / Quit
+  - Handles user input and calls `VotingSystem` methods
+  - Clear section headers for readability during demo
+
+**Deliverable:** Fully integrated system that can be run with `python main.py` and supports all core operations interactively.
+
+---
+
+## Phase 5 — Demo, Tests & Documentation
+**Goal:** Polish the project for submission and live presentation.
+
+**Owner: Team Member 3 (primary) + all for review**
+
+### Steps:
+- [ ] Implement `demo.py`
+  - Hardcoded scenario: 5 voters, 5 votes, 2 candidates
+  - Automatically builds tree, picks one receipt, generates proof, verifies it
+  - Then tampers with a ballot and shows verification failure
+  - Designed to be run from start to finish in under 2 minutes during demo
+- [ ] Write tests in `tests/`
+  - `test_ballot.py` — hashing consistency, field storage
+  - `test_voter_registry.py` — insert, lookup, duplicate detection
+  - `test_merkletree.py` — tree build, root correctness, odd leaf count
+  - `test_proof.py` — proof generation, verification pass/fail, tamper detection
+- [ ] Add complexity comments to all key methods
+- [ ] Finalize `README.md`
+  - Update with actual usage examples
+  - Include sample terminal output screenshots
+  - Write complexity table (final version)
+- [ ] Code cleanup and review pass (all 3 members)
+
+**Deliverable:** A clean, demo-ready project with passing tests, full README, and a scripted demo that clearly illustrates every core concept.
+
+---
+
+## Team Responsibilities Summary
+
+| Phase | Focus | Owner |
+|---|---|---|
+| Phase 1 | Ballot, Voter Registry, Utils | Member 1 |
+| Phase 2 | Merkle Tree construction + visualization | Member 2 |
+| Phase 3 | Proof generation, verification, path display | Member 3 |
+| Phase 4 | VotingSystem integration + CLI | Member 1 & 2 |
+| Phase 5 | Demo script, tests, README polish | Member 3 (+ all review) |
+
+---
+
+## Technologies Used
+
+- **Python 3.x** — no external libraries required
+- `hashlib` — SHA-256 ballot hashing
+- `time` / `uuid` — timestamps and receipt ID generation
+- `random` / `secrets` — salt generation
+- Built-in `dict` — hash table for voter registry
+
+---
+
+## Academic Context
+
+This project was built for **Data Structures II** to demonstrate:
+
+- How a **hash table** enables O(1) voter and receipt lookups
+- How a **Merkle tree** enables O(log n) tamper-evident inclusion proofs
+- How combining these two structures creates a verifiable, integrity-preserving data pipeline
+
+The focus is entirely on the data structure design and algorithm correctness, not on building a production-ready election platform.
