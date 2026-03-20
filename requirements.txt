@@ -1,0 +1,8 @@
+# E-VoteVerify+ dependencies
+#
+# The new modules (ballot.py, merkletree.py, voter_registry.py, etc.)
+# use only the Python standard library (hashlib, uuid, time, secrets, random).
+#
+# pycryptodome is kept here only for the legacy votingsystem.py file
+# from the original repo. It is NOT required for the redesigned DSII project.
+pycryptodome==3.23.0
