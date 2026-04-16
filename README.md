@@ -3,78 +3,58 @@
 
 > **This project is not merely a voting application; it is a study of tamper-evident data structures for secure verification.**
 
-Developed as a **Data Structures II** final project. The focus is on applying core DS concepts — hash tables and Merkle trees — to build a system where any voter can cryptographically verify their ballot was counted, without exposing anyone else's vote.
+**Language:** C++17 (no external libraries — standard library only)
+**Course:** Data Structures II — Final Project
+**Team:** 3 members
 
 ---
 
 ## Project Idea
 
-A voter casts a ballot. The ballot gets hashed and stored as a leaf in a global Merkle Tree. The voter receives a receipt ID. Later, they can use that receipt ID to:
+A voter casts a ballot. The ballot is hashed with SHA-256 and stored as a leaf in a global Merkle Tree. The voter receives a receipt ID. Later, they can use that receipt ID to:
 
-1. Generate a **Merkle proof** — the set of sibling hashes along the path from their ballot to the root
+1. **Generate a Merkle proof** — the set of sibling hashes along the path from their ballot to the root
 2. **Verify** that proof by recomputing the root and comparing it to the public root
-3. Detect **tampering** — if any ballot is modified, the root changes and old proofs break
+3. **Detect tampering** — if any ballot is modified, the root changes and old proofs break
 
 This demonstrates two fundamental data structures working together:
 
 | Data Structure | Role in This Project |
 |---|---|
-| Hash Table / Dictionary | Voter registry, receipt-to-index lookup, duplicate vote prevention |
-| Merkle Tree | Stores all ballot hashes, generates inclusion proofs, detects tampering |
+| Hash Table (`std::unordered_map`) | Voter registry, receipt-to-index lookup, duplicate vote prevention |
+| Merkle Tree (custom implementation) | Stores all ballot hashes, generates inclusion proofs, detects tampering |
 
 ---
 
 ## Core Data Structures & Complexity
 
 ### Hash Table (Voter Registry)
-- Insert voter: **O(1)** average
-- Check if already voted: **O(1)** average
-- Look up ballot index by receipt ID: **O(1)** average
+| Operation | Complexity |
+|---|---|
+| Register voter | O(1) average |
+| Check if already voted | O(1) average |
+| Look up ballot index by receipt ID | O(1) average |
 
 ### Merkle Tree
-- Build tree from n ballots: **O(n)**
-- Generate inclusion proof: **O(log n)**
-- Verify proof: **O(log n)**
-- Tamper propagation up the tree: **O(log n)**
+| Operation | Complexity |
+|---|---|
+| Build tree from n ballots | O(n) |
+| Generate inclusion proof | O(log n) |
+| Verify proof | O(log n) |
+| Tamper propagation | O(log n) |
 
 ---
 
 ## Features
 
-- Voter registration simulation
-- Vote casting with duplicate prevention
-- Ballot hashing using SHA-256 (receipt ID + candidate + salt + timestamp)
-- Global Merkle Tree construction (one tree for all ballots)
+- Voter registration with duplicate prevention
+- Vote casting with per-ballot SHA-256 hashing (receipt + voter + candidate + salt + timestamp)
+- Global Merkle Tree construction (one tree for all ballots, not per-candidate)
 - Merkle proof generation by receipt ID
-- Merkle proof verification (recomputes root from proof)
-- Tampering simulation and detection
+- Merkle proof verification (step-by-step root recomputation)
+- Tampering simulation — modify a ballot, show root change, show proof failure
 - Terminal visualization of tree levels and proof path
-- Scripted demo for presentation
-- Basic test suite
-
----
-
-## Proposed Feature Additions: MMR and SMT
-
-To enhance the scalability and real-time capabilities of E-VoteVerify, we propose implementing a **Merkle Mountain Range (MMR)** to transition the vote log toward an append-only streaming architecture. Unlike a standard Merkle tree that is most natural for fixed batches, an MMR dynamically merges balanced subtrees as new ballots arrive. This gives the system amortized **O(1)** append work while preserving **O(log n)** proof generation and verification.
-
-In parallel, we propose integrating a **Sparse Merkle Tree (SMT)** for voter eligibility management. The current hash-table-based registry is efficient, but it cannot generate a cryptographic proof that a voter token is absent from the roll. An SMT enables both **proof of inclusion** and **proof of non-inclusion**, allowing the system to prove that a token exists or does not exist in the committed voter registry using a logarithmic hash path.
-
-### Why these additions matter
-
-- **MMR** enables continuous vote ingestion without rebuilding the full tree after every append
-- **MMR** supports historical-state verification by preserving append-only commitment history
-- **SMT** upgrades voter eligibility from a trusted boolean lookup to a verifiable cryptographic commitment
-- **SMT** makes invalid-voter rejection auditable through non-inclusion proofs
-
-### Expected algorithmic value
-
-| Area | Current structure | Proposed structure | Benefit |
-|---|---|---|---|
-| Vote ingestion | Standard Merkle tree | MMR | Amortized **O(1)** append |
-| Vote proof | Merkle inclusion proof | MMR inclusion proof | Maintains **O(log n)** verification |
-| Eligibility lookup | Hash table boolean check | SMT inclusion/non-inclusion proof | Adds cryptographic auditability |
-| Invalid voter handling | "Not found" result | SMT non-inclusion proof | Tamper-evident rejection logic |
+- Full CLI menu
 
 ---
 
@@ -83,17 +63,49 @@ In parallel, we propose integrating a **Sparse Merkle Tree (SMT)** for voter eli
 ```
 EVoting-MerkleTree-DSII/
 │
-├── main.py              # Entry point — launches CLI or demo
-├── votingsystem.py      # Central controller — orchestrates all workflows
-├── merkletree.py        # Merkle Tree implementation (build, proof, verify, visualize)
-├── ballot.py            # Ballot class — hashing and record representation
-├── voter_registry.py    # Hash table layer — voter storage and receipt-to-index mapping
-├── utils.py             # SHA-256 helper, salt generator, timestamp, formatting
-├── demo.py              # Scripted demo scenario for presentation
+├── main.cpp              # CLI entry point — menu, user input, calls VotingSystem
+├── voting_system.hpp     # Central controller — orchestrates all workflows
+├── merkle_tree.hpp       # Merkle Tree: build, proof, verify, visualize
+├── voter_registry.hpp    # Hash table layer: voter storage, receipt-to-index map
+├── ballot.hpp            # Ballot struct: fields, canonical string, SHA-256 hash
+├── sha256.hpp            # Self-contained SHA-256 (no external libraries)
 │
-├── data/                # Optional sample voter/ballot datasets (JSON)
-├── tests/               # Unit tests for each module
+├── votingsystem.py       # Legacy Python reference (original repo, superseded)
+├── requirements.txt      # Python deps for legacy file only
 └── README.md
+```
+
+---
+
+## How to Build & Run
+
+### Install a C++ compiler (Windows)
+
+**Option A — MinGW-w64 (recommended for students):**
+1. Download from https://winlibs.com or install via [MSYS2](https://www.msys2.org/)
+2. Add the `bin` folder to your system PATH
+3. Verify: `g++ --version`
+
+**Option B — Visual Studio:**
+1. Install [Visual Studio Community](https://visualstudio.microsoft.com/) with the "Desktop development with C++" workload
+2. Open a "Developer Command Prompt" and use `cl` instead of `g++`
+
+### Compile
+
+```bash
+g++ -std=c++17 -O2 -o evoteverify main.cpp
+```
+
+With MSVC:
+```bash
+cl /std:c++17 /EHsc /O2 /Fe:evoteverify.exe main.cpp
+```
+
+### Run
+
+```bash
+./evoteverify        # Linux / macOS
+evoteverify.exe      # Windows
 ```
 
 ---
@@ -101,197 +113,119 @@ EVoting-MerkleTree-DSII/
 ## Demo Workflow
 
 ```
-1. Register sample voters
-2. Cast votes (each creates a hashed ballot)
-3. Build the global Merkle Tree from all ballot hashes
-4. Display the root hash
-5. Select one receipt ID
-6. Generate and display the Merkle proof path
-7. Verify the proof — confirm it matches the root
-8. Tamper with one ballot
-9. Show that verification now fails / root has changed
-```
-
----
-
-## How to Run
-
-```bash
-python main.py
-```
-
-Or run the scripted demo directly:
-
-```bash
-python demo.py
+1.  Register 4-5 voters          (option 1, repeated)
+2.  Cast votes                   (option 2, repeated)
+3.  Build Merkle Tree            (option 3)
+4.  Display tree levels          (option 4)
+5.  Copy one receipt ID          (option 8)
+6.  Verify vote — proof PASSES   (option 5)
+7.  Tamper with that ballot      (option 6)
+8.  Verify vote — proof FAILS    (option 5, same receipt)
+9.  Display updated summary      (option 7)
 ```
 
 ---
 
 ## Development Plan
 
-The next development cycle is divided into **6 phases** across **4 team members** so the current system can be extended with MMR and SMT in a controlled way.
+The project is divided into **5 phases** across **3 team members**.
 
 ---
 
-## Phase 1 - Architecture and Interface Freeze
-**Goal:** Define shared interfaces and invariants before implementation begins.
+## Phase 1 — Foundation & Data Layer ✅ Complete
+**Goal:** Core data representations and utility functions.
 
-**Owners:** Member 1 + Member 4
+**Owner: Member 1**
 
-### Detailed subtasks
-- [ ] Review the current vote-casting and verification flow in `votingsystem.py`
-- [ ] Identify where the code assumes a single batch-built Merkle tree
-- [ ] Define a common proof format for Merkle tree, MMR, and SMT verification outputs
-- [ ] Define the public commitment format for:
-  - vote log root / MMR root
-  - voter registry root / SMT root
-- [ ] Decide whether classic Merkle tree mode remains for comparison or is fully replaced
-- [ ] Fix the SMT keying strategy using hashed voter tokens and a fixed-depth path
-- [ ] Write invariants for append-only vote storage and proof-of-non-inclusion correctness
-
-**Deliverable:** Short design specification with stable interfaces, proof schema, and module boundaries.
+| Task | Status |
+|---|---|
+| Project folder structure and file stubs | Done |
+| `sha256.hpp` — self-contained SHA-256 (no libraries) | Done |
+| `ballot.hpp` — Ballot struct with `to_hash()`, `to_canonical()`, `to_display()` | Done |
+| `voter_registry.hpp` — hash table layer (two `unordered_map` instances) | Done |
 
 ---
 
-## Phase 2 - Merkle Mountain Range Implementation
-**Goal:** Add append-only vote commitment support using an MMR.
+## Phase 2 — Merkle Tree Construction ✅ Complete
+**Goal:** Full Merkle Tree implementation from scratch.
 
-**Owner:** Member 1
+**Owner: Member 2**
 
-### Detailed subtasks
-- [ ] Create `mmr.py` with an `MMR` class
-- [ ] Implement peak tracking and subtree merge logic
-- [ ] Implement `append(leaf_hash)` with repeated merges of equal-height peaks
-- [ ] Implement root aggregation logic for publishing a single commitment
-- [ ] Implement `get_peaks()` for debugging and presentation
-- [ ] Implement `generate_proof(leaf_index)` for MMR inclusion proofs
-- [ ] Implement `verify_proof(leaf_hash, proof, root)` for independent verification
-- [ ] Test edge cases:
-  - empty MMR
-  - one leaf
-  - odd/even append sequences
-  - proof validity after additional appends
-
-**Deliverable:** Working MMR module with append, root generation, and proof support.
+| Task | Status |
+|---|---|
+| `merkle_tree.hpp` — `MerkleTree` class | Done |
+| `build()` — bottom-up construction, O(n), handles odd leaf counts | Done |
+| `get_root()` — returns root hash | Done |
+| `print_tree()` — terminal display of all levels | Done |
 
 ---
 
-## Phase 3 - Sparse Merkle Tree Implementation
-**Goal:** Add cryptographic voter eligibility management with inclusion and non-inclusion proofs.
+## Phase 3 — Proof Generation & Verification ✅ Complete
+**Goal:** Merkle proof pipeline with visual output.
 
-**Owner:** Member 2
+**Owner: Member 3**
 
-### Detailed subtasks
-- [ ] Create `smt.py` with a `SparseMerkleTree` class
-- [ ] Precompute default empty hashes for each tree depth
-- [ ] Implement token-to-bitpath conversion using SHA-256
-- [ ] Implement `insert(voter_token)` for eligible voter registration
-- [ ] Implement `generate_inclusion_proof(voter_token)`
-- [ ] Implement `generate_non_inclusion_proof(voter_token)`
-- [ ] Implement inclusion and non-inclusion proof verification methods
-- [ ] Export the SMT root for publication and audit
-- [ ] Test edge cases:
-  - empty tree
-  - first insertion
-  - long shared prefixes
-  - absent-token verification
-
-**Deliverable:** SMT module capable of proving voter presence or absence in the committed registry.
+| Task | Status |
+|---|---|
+| `generate_proof(leaf_index)` — O(log n) sibling collection | Done |
+| `verify_proof(leaf_hash, proof, root)` — O(log n) root recomputation | Done |
+| `print_proof_path()` — step-by-step terminal visualization | Done |
 
 ---
 
-## Phase 4 - System Integration
-**Goal:** Connect MMR and SMT to the existing election workflow.
+## Phase 4 — System Integration & CLI 🔄 In Progress
+**Goal:** Wire all modules together into a usable CLI program.
 
-**Owner:** Member 3
+**Owner: Member 1 & Member 2 (joint)**
 
-### Detailed subtasks
-- [ ] Refactor `votingsystem.py` so vote commitment storage is separate from voter eligibility checks
-- [ ] Replace batch tree rebuild flow with streaming MMR appends during `cast_vote(...)`
-- [ ] Integrate SMT-backed eligibility validation before a vote is accepted
-- [ ] Store receipt metadata so each receipt maps to an MMR leaf index
-- [ ] Add support for publishing:
-  - MMR root for vote-log commitment
-  - SMT root for voter-roll commitment
-- [ ] Add verification methods for:
-  - vote inclusion proof
-  - voter inclusion proof
-  - voter non-inclusion proof
-- [ ] Preserve the current demo flow where possible so comparison remains easy
-
-**Deliverable:** End-to-end voting workflow backed by MMR for votes and SMT for voter eligibility.
+| Task | Status |
+|---|---|
+| `voting_system.hpp` — `VotingSystem` class wiring all modules | Done |
+| `register_voter()`, `cast_vote()`, `build_tree()` methods | Done |
+| `verify_vote()`, `tamper_vote()`, `display_summary()` methods | Done |
+| `main.cpp` — numbered menu, user input handling | Done |
+| End-to-end testing of full workflow | Pending |
+| Edge case handling (empty tree, bad receipt ID, etc.) | Pending |
 
 ---
 
-## Phase 5 - CLI, Demo, and Visualization
-**Goal:** Make the new structures easy to present and inspect.
+## Phase 5 — Demo, Tests & Documentation 📋 Pending
+**Goal:** Polish for submission and live presentation.
 
-**Owner:** Member 4
+**Owner: Member 3 (primary) + all review**
 
-### Detailed subtasks
-- [ ] Update the CLI to display current MMR and SMT roots
-- [ ] Add commands to inspect MMR peaks and proof paths
-- [ ] Add commands to inspect SMT inclusion/non-inclusion proofs
-- [ ] Build a presentation-ready demo that shows:
-  - voter registration into SMT
-  - vote streaming into MMR
-  - successful inclusion verification
-  - failed eligibility check with non-inclusion proof
-- [ ] Add clean terminal output and screenshots for documentation
-
-**Deliverable:** Demo-ready interface and visualization layer for the new cryptographic structures.
-
----
-
-## Phase 6 - Testing, Benchmarking, and Documentation
-**Goal:** Validate correctness and document the algorithmic improvements clearly.
-
-**Owners:** All 4 members
-
-### Detailed subtasks
-- [ ] Write unit tests for MMR append, merge, root, and proof behavior
-- [ ] Write unit tests for SMT insertion, inclusion proof, and non-inclusion proof behavior
-- [ ] Write integration tests for end-to-end voting with MMR + SMT enabled
-- [ ] Add regression tests if the original Merkle-tree mode is retained
-- [ ] Benchmark:
-  - standard Merkle rebuild vs MMR append
-  - hash-table lookup vs SMT proof generation
-- [ ] Update `README.md` and report material with:
-  - complexity comparison table
-  - architecture summary
-  - historical-state verification explanation
-  - proof-of-non-inclusion explanation
-- [ ] Run a final review pass on naming, comments, and edge cases
-
-**Deliverable:** Tested, benchmarked, and fully documented upgraded project.
+| Task | Status |
+|---|---|
+| `demo.cpp` — scripted scenario (hardcoded voters, votes, tamper, verify) | Pending |
+| `tests/test_ballot.cpp` — hashing consistency, field storage | Pending |
+| `tests/test_voter_registry.cpp` — insert, lookup, duplicate detection | Pending |
+| `tests/test_merkle_tree.cpp` — build, root, odd leaves, proof correctness | Pending |
+| Complexity comments review across all files | Pending |
+| README sample output screenshots | Pending |
+| Final code review pass (all 3 members) | Pending |
 
 ---
 
 ## Team Responsibilities Summary
 
-| Member | Primary Focus | Supporting Focus | Deliverables |
-|---|---|---|---|
-| Member 1 | MMR design and implementation | Architecture review | `mmr.py`, append logic, MMR proofs |
-| Member 2 | SMT design and implementation | Proof verification review | `smt.py`, inclusion/non-inclusion proofs |
-| Member 3 | Integration into voting workflow | Integration tests | `votingsystem.py` refactor, receipt-index mapping |
-| Member 4 | CLI, demo, and documentation | Interface planning | visualization, demo flow, README/report updates |
-
-### Coordination notes
-- Member 1 and Member 2 should align early on proof object structure so verification APIs stay consistent
-- Member 3 should begin integration only after Phase 1 interfaces are frozen
-- Member 4 can start CLI/documentation scaffolding early and plug in real outputs as modules stabilize
-- All 4 members should own tests for their module first, then cross-review each other's work in Phase 6
+| Phase | Focus | Owner |
+|---|---|---|
+| Phase 1 | SHA-256, Ballot, Voter Registry | Member 1 |
+| Phase 2 | Merkle Tree construction + print | Member 2 |
+| Phase 3 | Proof generation, verification, visualization | Member 3 |
+| Phase 4 | VotingSystem integration + CLI | Member 1 & 2 |
+| Phase 5 | Demo script, tests, README polish | Member 3 + all review |
 
 ---
 
-## Technologies Used
+## Technologies
 
-- **Python 3.x** — no external libraries required
-- `hashlib` — SHA-256 ballot hashing
-- `time` / `uuid` — timestamps and receipt ID generation
-- `random` / `secrets` — salt generation
-- Built-in `dict` — hash table for voter registry
+- **C++17** — all implementation
+- `std::unordered_map` — hash table for voter registry and receipt map
+- `std::vector` — dynamic storage for tree levels and ballot list
+- `std::string`, `<sstream>`, `<iomanip>` — SHA-256 output formatting
+- `<random>`, `<chrono>` — salt and timestamp generation
+- No external libraries required
 
 ---
 
