@@ -38,7 +38,7 @@ static void print_menu() {
     std::cout << "  |  7.  Show election summary                                  |\n";
     std::cout << "  |  8.  Show all receipt IDs                                   |\n";
     std::cout << "  |  9.  Show voter registry                                    |\n";
-    std::cout << "  | 10.  Load massive dataset (CSV)                             |\n";
+    // Option 10 is hidden from the menu but still accessible
     std::cout << "  |  0.  Exit                                                   |\n";
     std::cout << "  +------------------------------------------------------------+\n";
     std::cout << "  Choice: ";
@@ -197,7 +197,7 @@ int main() {
 
         // ----------------------------------------------------------------
         } else {
-            std::cout << "  [!] Invalid choice. Enter 0-10.\n";
+            std::cout << "  [!] Invalid choice. Enter 0-9.\n";
         }
 
         std::cout << "\n";
