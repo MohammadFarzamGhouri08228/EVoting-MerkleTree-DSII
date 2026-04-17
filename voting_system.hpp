@@ -235,7 +235,7 @@ public:
         const Ballot& b   = ballots_[idx];
         std::string leaf  = b.to_hash();
         auto proof        = tree_.generate_proof(idx);
-        tree_.print_proof_path(receipt_id, leaf, proof, tree_.get_root());
+        tree_.print_proof_path(receipt_id, leaf, proof, last_built_root_);
     }
 
     // ------------------------------------------------------------------
