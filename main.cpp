@@ -61,6 +61,30 @@ static std::string prompt(const std::string& label) {
     }
 }
 
+// Helper to select a receipt from a numbered list
+static std::string prompt_receipt_selection(const std::vector<std::string>& receipts) {
+    if (receipts.empty()) return "";
+    
+    std::cout << "  Available receipts:\n";
+    for (size_t i = 0; i < receipts.size(); ++i) {
+        std::cout << "    " << (i + 1) << ") " << receipts[i] << "\n";
+    }
+    std::cout << "\n";
+    
+    while (true) {
+        std::string input = prompt("Select receipt number (1-" + std::to_string(receipts.size()) + ")");
+        try {
+            int choice = std::stoi(input);
+            if (choice >= 1 && choice <= static_cast<int>(receipts.size())) {
+                return receipts[choice - 1];
+            }
+        } catch (...) {
+            // catch invalid integer conversions
+        }
+        std::cout << "  [!] Invalid choice. Please enter a number between 1 and " << receipts.size() << ".\n";
+    }
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -118,12 +142,15 @@ int main() {
             if (!vs.is_tree_built()) {
                 std::cout << "  [!] Build the tree first (option 3).\n";
             } else {
-                std::cout << "  Available receipts:\n";
-                for (const auto& r : vs.all_receipts())
-                    std::cout << "    " << r << "\n";
-                std::cout << "\n";
-                std::string receipt = prompt("Receipt ID");
-                vs.verify_vote(receipt);
+                auto receipts = vs.all_receipts();
+                if (receipts.empty()) {
+                    std::cout << "  [!] No ballots have been cast yet.\n";
+                } else {
+                    std::string receipt = prompt_receipt_selection(receipts);
+                    if (!receipt.empty()) {
+                        vs.verify_vote(receipt);
+                    }
+                }
             }
 
         // ----------------------------------------------------------------
@@ -132,13 +159,12 @@ int main() {
             if (vs.ballot_count() == 0) {
                 std::cout << "  [!] No ballots have been cast yet.\n";
             } else {
-                std::cout << "  Available receipts:\n";
-                for (const auto& r : vs.all_receipts())
-                    std::cout << "    " << r << "\n";
-                std::cout << "\n";
-                std::string receipt      = prompt("Receipt ID to tamper");
-                std::string new_cand     = prompt("New (fake) candidate");
-                vs.tamper_vote(receipt, new_cand);
+                auto receipts = vs.all_receipts();
+                std::string receipt = prompt_receipt_selection(receipts);
+                if (!receipt.empty()) {
+                    std::string new_cand = prompt("New (fake) candidate");
+                    vs.tamper_vote(receipt, new_cand);
+                }
             }
 
         // ----------------------------------------------------------------
