@@ -21,7 +21,7 @@
 static void print_banner() {
     std::cout << "\n";
     std::cout << "  +=============================================================+\n";
-    std::cout << "  |           E-VoteVerify+   (DSII Final Project)             |\n";
+    std::cout << "  |           E-VoteVerify+   (DSII Final Project)              |\n";
     std::cout << "  |     Merkle-Tree Based Tamper-Evident Voting System          |\n";
     std::cout << "  |                 Implemented in C++17                        |\n";
     std::cout << "  +=============================================================+\n\n";
@@ -38,6 +38,7 @@ static void print_menu() {
     std::cout << "  |  7.  Show election summary                                  |\n";
     std::cout << "  |  8.  Show all receipt IDs                                   |\n";
     std::cout << "  |  9.  Show voter registry                                    |\n";
+    std::cout << "  | 10.  Load massive dataset (CSV)                             |\n";
     std::cout << "  |  0.  Exit                                                   |\n";
     std::cout << "  +------------------------------------------------------------+\n";
     std::cout << "  Choice: ";
@@ -163,8 +164,14 @@ int main() {
             vs.print_registry();
 
         // ----------------------------------------------------------------
+        } else if (choice == 10) {
+            // Load massive dataset
+            std::string filepath = prompt("Enter dataset filepath (e.g. dataset.csv)");
+            vs.load_dataset(filepath);
+
+        // ----------------------------------------------------------------
         } else {
-            std::cout << "  [!] Invalid choice. Enter 0-9.\n";
+            std::cout << "  [!] Invalid choice. Enter 0-10.\n";
         }
 
         std::cout << "\n";

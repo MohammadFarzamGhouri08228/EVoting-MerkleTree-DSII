@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <random>
 #include <chrono>
+#include <fstream>
 #include "ballot.hpp"
 #include "voter_registry.hpp"
 #include "merkle_tree.hpp"
@@ -152,6 +153,70 @@ public:
     }
 
     // ------------------------------------------------------------------
+    // Load Dataset (Batch Registration and Voting)
+    // Reads a CSV file formatted as: voter_id,candidate
+    // ------------------------------------------------------------------
+    void load_dataset(const std::string& filepath) {
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            std::cout << "  [!] Failed to open dataset file: " << filepath << "\n";
+            return;
+        }
+
+        std::string line;
+        int registered_count = 0;
+        int voted_count = 0;
+
+        // Optionally skip the header if it exists
+        std::getline(file, line); // Assuming first line is header: voter_id,candidate
+
+        std::cout << "  [*] Loading dataset from " << filepath << "...\n";
+
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+
+            std::stringstream ss(line);
+            std::string voter_id, candidate;
+
+            if (std::getline(ss, voter_id, ',') && std::getline(ss, candidate)) {
+                // Trim carriage returns (Windows CRLF issues)
+                if (!candidate.empty() && candidate.back() == '\r') {
+                    candidate.pop_back();
+                }
+
+                // Register voter silently (avoid console spam)
+                if (registry_.register_voter(voter_id)) {
+                    registered_count++;
+                }
+
+                // Cast vote silently
+                if (!registry_.has_voted(voter_id)) {
+                    Ballot b;
+                    b.voter_id   = voter_id;
+                    b.candidate  = candidate;
+                    b.salt       = make_salt();
+                    b.timestamp  = make_timestamp();
+                    b.receipt_id = make_receipt_id(voter_id);
+
+                    int index = static_cast<int>(ballots_.size());
+                    ballots_.push_back(b);
+
+                    registry_.mark_voted(voter_id);
+                    registry_.store_receipt(b.receipt_id, index);
+                    voted_count++;
+                }
+            }
+        }
+        
+        tree_built_ = false; // Need to rebuild tree after batch voting
+
+        std::cout << "  [+] Dataset loaded successfully!\n";
+        std::cout << "      - Voters registered: " << registered_count << "\n";
+        std::cout << "      - Votes cast:        " << voted_count << "\n";
+        std::cout << "  [*] Don't forget to build the Merkle Tree (Option 3)!\n";
+    }
+
+    // ------------------------------------------------------------------
     // Verify a vote by receipt ID
     // Generates the Merkle proof for the ballot and verifies it against
     // the current root. Displays the full proof path.
@@ -242,7 +307,7 @@ public:
         if (tree_built_)
             std::cout << "  | Merkle root : " << tree_.get_root() << "\n";
         else
-            std::cout << "  | Merkle root : (not yet built — run option 3)\n";
+            std::cout << "  | Merkle root : (not yet built -- run option 3)\n";
         std::cout << "  +------------------------------------------------------------+\n\n";
     }
 

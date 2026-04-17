@@ -86,7 +86,7 @@ public:
         std::cout << "  " << std::string(44, '-') << "\n";
         for (const auto& kv : voters_)
             std::cout << "    " << kv.first
-                      << "  —  " << (kv.second ? "VOTED" : "eligible") << "\n";
+                      << "  --  " << (kv.second ? "VOTED" : "eligible") << "\n";
         std::cout << "\n";
     }
 };
