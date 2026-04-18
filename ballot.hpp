@@ -21,6 +21,7 @@ struct Ballot {
     std::string candidate;    // chosen candidate
     std::string salt;         // random salt — ensures hash uniqueness
     std::string timestamp;    // seconds since epoch at time of casting
+    bool        valid = true; // false after invalidate_ballot() is called
 
     // -------------------------------------------------------------------------
     // Canonical string: all fields joined by '|' delimiter.
@@ -41,8 +42,10 @@ struct Ballot {
 
     // Human-readable one-line summary for display in the CLI.
     std::string to_display() const {
-        return "[" + receipt_id + "] voter=" + voter_id +
-               "  candidate=" + candidate +
-               "  ts=" + timestamp;
+        std::string s = "[" + receipt_id + "] voter=" + voter_id +
+                        "  candidate=" + candidate +
+                        "  ts=" + timestamp;
+        if (!valid) s += "  [INVALIDATED]";
+        return s;
     }
 };
