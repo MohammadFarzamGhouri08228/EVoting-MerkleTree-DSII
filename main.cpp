@@ -33,13 +33,14 @@ static void print_menu() {
     std::cout << "  |  2.  Cast vote                                              |\n";
     std::cout << "  |  3.  Build Merkle Tree                                      |\n";
     std::cout << "  |  4.  Display Merkle Tree (visualise levels)                 |\n";
-    std::cout << "  |  5.  Verify vote  (Merkle proof — parent-pointer walk)      |\n";
+    std::cout << "  |  5.  Verify vote  (Merkle proof -- parent-pointer walk)      |\n";
     std::cout << "  |  6.  Tamper with a ballot  (tamper-detection demo)          |\n";
     std::cout << "  |  7.  Invalidate a ballot   (delete_leaf demo)               |\n";
-    std::cout << "  |  8.  Show election summary                                  |\n";
-    std::cout << "  |  9.  Show all receipt IDs                                   |\n";
-    std::cout << "  |  10. Show voter registry                                    |\n";
-    // Option 11 is hidden from the menu but still accessible
+    std::cout << "  |  8.  Delete a ballot       (allow voter to re-vote)         |\n";
+    std::cout << "  |  9.  Show election summary                                  |\n";
+    std::cout << "  |  10. Show all receipt IDs                                   |\n";
+    std::cout << "  |  11. Show voter registry                                    |\n";
+    // Option 12 is hidden from the menu but still accessible
     std::cout << "  |  0.  Exit                                                   |\n";
     std::cout << "  +------------------------------------------------------------+\n";
     std::cout << "  Choice: ";
@@ -71,7 +72,7 @@ static std::string prompt_receipt_selection(
     std::cout << "  Available receipts:\n";
     for (size_t i = 0; i < receipts.size(); ++i) {
         std::cout << "    " << (i + 1) << ") " << receipts[i].receipt_id;
-        if (!receipts[i].valid) std::cout << "  [INVALIDATED]";
+        if (!receipts[i].valid) std::cout << "  [DELETED / INVALIDATED]";
         std::cout << "\n";
     }
     std::cout << "\n";
@@ -185,11 +186,25 @@ int main() {
 
         // ----------------------------------------------------------------
         } else if (choice == 8) {
+            // Delete ballot — tree_.delete_leaf() and unmark_voted()
+            if (!vs.is_tree_built()) {
+                std::cout << "  [!] Build the tree first (option 3).\n";
+            } else if (vs.ballot_count() == 0) {
+                std::cout << "  [!] No ballots have been cast yet.\n";
+            } else {
+                auto receipts = vs.all_receipt_info();
+                std::string receipt = prompt_receipt_selection(receipts);
+                if (!receipt.empty())
+                    vs.delete_ballot(receipt);
+            }
+
+        // ----------------------------------------------------------------
+        } else if (choice == 9) {
             // Election summary
             vs.display_summary();
 
         // ----------------------------------------------------------------
-        } else if (choice == 9) {
+        } else if (choice == 10) {
             // All receipts
             auto receipts = vs.all_receipt_info();
             if (receipts.empty()) {
@@ -198,25 +213,25 @@ int main() {
                 std::cout << "  All receipt IDs (" << receipts.size() << "):\n";
                 for (const auto& r : receipts) {
                     std::cout << "    " << r.receipt_id;
-                    if (!r.valid) std::cout << "  [INVALIDATED]";
+                    if (!r.valid) std::cout << "  [DELETED / INVALIDATED]";
                     std::cout << "\n";
                 }
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 10) {
+        } else if (choice == 11) {
             // Voter registry
             vs.print_registry();
 
         // ----------------------------------------------------------------
-        } else if (choice == 11) {
+        } else if (choice == 12) {
             // Load dataset (hidden from menu)
             std::string filepath = prompt("Enter dataset filepath (e.g. dataset.csv)");
             vs.load_dataset(filepath);
 
         // ----------------------------------------------------------------
         } else {
-            std::cout << "  [!] Invalid choice. Enter 0-10.\n";
+            std::cout << "  [!] Invalid choice. Enter 0-11.\n";
         }
 
         std::cout << "\n";

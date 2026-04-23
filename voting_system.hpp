@@ -155,7 +155,7 @@ public:
                       << ")\n";
             std::cout << "      New root: " << short_h(tree_.get_root()) << "\n";
         } else {
-            std::cout << "      [Tree not yet built — use option 3 to build]\n";
+            std::cout << "      [Tree not yet built -- use option 3 to build]\n";
         }
 
         return b.receipt_id;
@@ -285,7 +285,7 @@ public:
             return;
         }
         if (!ballots_[idx].valid) {
-            std::cout << "  [!] Ballot is already invalidated — cannot tamper.\n";
+            std::cout << "  [!] Ballot is already invalidated -- cannot tamper.\n";
             return;
         }
 
@@ -374,6 +374,56 @@ public:
         std::cout << "  +-----------------------------------------------------------+\n";
         std::cout << "  | [OK] Ballot invalidated. Root has changed.\n";
         std::cout << "  |      Verify vote to confirm (MISMATCH expected).\n";
+        std::cout << "  +===========================================================+\n\n";
+    }
+
+    // ------------------------------------------------------------------
+    // Delete a ballot  —  O(log n) via tree_.delete_leaf()
+    //
+    // Similar to invalidate_ballot, but completely removes the vote AND
+    // unmarks the voter so they can vote again.
+    // ------------------------------------------------------------------
+    void delete_ballot(const std::string& receipt_id) {
+        if (!tree_built_) {
+            std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
+            return;
+        }
+        int idx = registry_.get_ballot_index(receipt_id);
+        if (idx < 0) {
+            std::cout << "  [!] Receipt ID not found: " << receipt_id << "\n";
+            return;
+        }
+        if (!ballots_[idx].valid) {
+            std::cout << "  [!] Ballot is already deleted or invalidated.\n";
+            return;
+        }
+
+        std::string old_root = tree_.get_root();
+
+        std::cout << "\n";
+        std::cout << "  +====== BALLOT DELETION ====================================+\n";
+        std::cout << "  | Receipt   : " << receipt_id                               << "\n";
+        std::cout << "  | Voter     : " << ballots_[idx].voter_id                   << "\n";
+        std::cout << "  | Candidate : " << ballots_[idx].candidate                  << "\n";
+        std::cout << "  | Leaf hash : " << short_h(ballots_[idx].to_hash())         << "\n";
+        std::cout << "  +-----------------------------------------------------------+\n";
+        std::cout << "  | 1. Freeing voter to vote again...\n";
+        
+        registry_.unmark_voted(ballots_[idx].voter_id);
+        ballots_[idx].valid = false;
+
+        std::cout << "  | 2. Nullifying leaf and updating tree via parent ptrs...\n";
+
+        // O(log n): sets sentinel hash on leaf node, walks up via parent pointers
+        tree_.delete_leaf(idx);
+
+        last_built_root_ = tree_.get_root();   // root has changed — update snapshot
+
+        std::cout << "  | Sentinel  : " << short_h(MerkleTree::deleted_sentinel()) << "\n";
+        std::cout << "  | Old root  : " << old_root                                << "\n";
+        std::cout << "  | New root  : " << last_built_root_                        << "\n";
+        std::cout << "  +-----------------------------------------------------------+\n";
+        std::cout << "  | [OK] Ballot deleted. The voter may now cast a new vote.\n";
         std::cout << "  +===========================================================+\n\n";
     }
 

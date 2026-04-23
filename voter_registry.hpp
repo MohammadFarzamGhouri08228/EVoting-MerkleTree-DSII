@@ -61,6 +61,12 @@ public:
         voters_[voter_id] = true;
     }
 
+    // Unmark a voter's status (allow them to vote again).
+    // O(1) average — hash table update
+    void unmark_voted(const std::string& voter_id) {
+        voters_[voter_id] = false;
+    }
+
     // Store the mapping: receipt_id  →  ballot_index.
     // Called immediately after a ballot is appended to the ballot list.
     // O(1) average — hash table insert
