@@ -40,7 +40,7 @@ static void print_menu() {
     std::cout << "  |  9.  Show election summary                                  |\n";
     std::cout << "  |  10. Show all receipt IDs                                   |\n";
     std::cout << "  |  11. Show voter registry                                    |\n";
-    // Option 12 is hidden from the menu but still accessible
+    std::cout << "  |  12. Load sample dataset                                    |\n";
     std::cout << "  |  0.  Exit                                                   |\n";
     std::cout << "  +------------------------------------------------------------+\n";
     std::cout << "  Choice: ";
@@ -225,13 +225,27 @@ int main() {
 
         // ----------------------------------------------------------------
         } else if (choice == 12) {
-            // Load dataset (hidden from menu)
-            std::string filepath = prompt("Enter dataset filepath (e.g. dataset.csv)");
+            // Load dataset
+            std::cout << "  Available datasets:\n";
+            std::cout << "    1) data/dataset.csv (50 voters)\n";
+            std::cout << "    2) Enter custom filepath\n";
+            std::string sub_choice = prompt("Select option (1 or 2)");
+            
+            std::string filepath;
+            if (sub_choice == "1") {
+                filepath = "data/dataset.csv";
+            } else if (sub_choice == "2") {
+                filepath = prompt("Enter dataset filepath");
+            } else {
+                std::cout << "  [!] Invalid option. Cancelled.\n";
+                continue;
+            }
+            
             vs.load_dataset(filepath);
 
         // ----------------------------------------------------------------
         } else {
-            std::cout << "  [!] Invalid choice. Enter 0-11.\n";
+            std::cout << "  [!] Invalid choice. Enter 0-12.\n";
         }
 
         std::cout << "\n";
