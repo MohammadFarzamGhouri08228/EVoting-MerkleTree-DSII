@@ -173,6 +173,20 @@ void test_proof_failure_tampered_or_deleted() {
     ASSERT_FALSE(is_valid_deleted);
 }
 
+// Tamper must break proof vs published snapshot until a new build_tree().
+void test_voting_tamper_proof_snapshot() {
+    SuppressOutput so;
+    VotingSystem vs;
+    vs.register_voter("V1");
+    std::string r = vs.cast_vote("V1", "Alice");
+    vs.build_tree();
+    ASSERT_TRUE(vs.proof_matches_published_snapshot(r));
+    vs.tamper_vote(r, "Charlie");
+    ASSERT_FALSE(vs.proof_matches_published_snapshot(r));
+    vs.build_tree();
+    ASSERT_TRUE(vs.proof_matches_published_snapshot(r));
+}
+
 // Integration tests with VotingSystem
 void test_voting_system_integration() {
     SuppressOutput so; // Suppress stdout to keep test output clean
@@ -217,6 +231,7 @@ int main() {
     RUN_TEST(test_delete_tombstone);
     RUN_TEST(test_proof_generation_and_verification);
     RUN_TEST(test_proof_failure_tampered_or_deleted);
+    RUN_TEST(test_voting_tamper_proof_snapshot);
     RUN_TEST(test_voting_system_integration);
 
     std::cout << "\n========================================\n";

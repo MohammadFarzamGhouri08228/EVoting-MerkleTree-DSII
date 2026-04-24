@@ -629,7 +629,8 @@ public:
         print_tree_visual();
     }
 
-    void print_proof_path(
+    // Prints step-by-step inclusion proof; returns true iff recomputed root == root_to_check.
+    bool print_proof_path(
         const std::string& receipt_id,
         const std::string& leaf_hash,
         const std::vector<std::pair<std::string, std::string>>& proof,
@@ -683,9 +684,11 @@ public:
             std::cout << "  | Result : [OK]  MATCH  --  Vote VERIFIED successfully.    |\n";
         } else {
             std::cout << "  | Result : [!!] MISMATCH  -- Proof INVALID.                |\n";
-            std::cout << "  |          Root changed: ballot may have been tampered or   |\n";
-            std::cout << "  |          invalidated by an election authority.            |\n";
+            std::cout << "  |          Computed root != published election snapshot.    |\n";
+            std::cout << "  |          Common causes: tampered ballot, invalidated leaf,  |\n";
+            std::cout << "  |          or stale snapshot after an official tree rebuild.|\n";
         }
         std::cout << "  +===========================================================+\n\n";
+        return match;
     }
 };

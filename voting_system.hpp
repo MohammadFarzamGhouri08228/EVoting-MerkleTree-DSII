@@ -32,10 +32,11 @@ class VotingSystem {
     MerkleTree          tree_;
     std::vector<Ballot> ballots_;
 
-    // Root snapshot taken at the last build_tree() call (or after insert/
-    // delete/update operations that keep the tree current).
-    // Proofs are always verified against this snapshot so that tampering
-    // (which changes the live root) is correctly detected.
+    // Published election root snapshot: updated on build_tree(), each live
+    // cast_vote() insert, invalidate_ballot(), and delete_ballot().
+    // Intentionally NOT updated by tamper_vote() — voters who saved the old
+    // root see a proof MISMATCH until officials publish a new snapshot (e.g.
+    // by running build_tree() again, which re-commits to current ballots).
     std::string         last_built_root_;
     bool                tree_built_ = false;
 
@@ -216,6 +217,15 @@ public:
         std::cout << "  [+] Merkle Tree built  |  " << ballots_.size()
                   << " ballot(s)  |  levels: " << tree_.level_count() << "\n";
         std::cout << "      Root: " << tree_.get_root() << "\n";
+
+        int tampered_n = 0;
+        for (const auto& b : ballots_)
+            if (b.valid && b.tampered) ++tampered_n;
+        if (tampered_n > 0) {
+            std::cout << "  [!] " << tampered_n << " ballot(s) marked [*** TAMPERED ***].\n";
+            std::cout << "      This build sets a NEW published root that includes those changes.\n";
+            std::cout << "      Option 5 will now MATCH for those ballots against this snapshot.\n";
+        }
     }
 
     // ------------------------------------------------------------------
@@ -299,13 +309,39 @@ public:
             std::cout << "  [!] This ballot has been INVALIDATED by an election authority.\n";
             std::cout << "      Proof will show MISMATCH (sentinel hash vs. original hash).\n";
         }
+        if (b.tampered) {
+            std::cout << "  [!!!] This ballot is flagged [*** TAMPERED ***].\n";
+            std::cout << "        The candidate field was altered after the tree was built.\n";
+            std::cout << "        The proof below will show MISMATCH against the original root.\n";
+        }
 
-        // Use the original ballot hash as the claimed leaf content.
-        // If the ballot was invalidated, the tree holds the sentinel instead,
-        // so the proof will correctly fail — demonstrating delete_leaf() worked.
+        // Leaf + proof follow the LIVE tree; last_built_root_ is the published
+        // snapshot. After tamper_vote(), snapshot != live root → MISMATCH.
         std::string leaf  = b.to_hash();
         auto        proof = tree_.generate_proof(idx);
-        tree_.print_proof_path(receipt_id, leaf, proof, last_built_root_);
+        bool ok = tree_.print_proof_path(receipt_id, leaf, proof, last_built_root_);
+
+        if (!ok && b.tampered && b.valid) {
+            std::cout << "  +------ Why this failed (tamper demo) -----------------------+\n";
+            std::cout << "  | The ballot was changed after the published root snapshot.   |\n";
+            std::cout << "  | Proof steps still combine to the LIVE tree root:            |\n";
+            std::cout << "  |   " << short_h(tree_.get_root()) << "\n";
+            std::cout << "  | but verification checks against the PUBLISHED snapshot:     |\n";
+            std::cout << "  |   " << short_h(last_built_root_) << "\n";
+            std::cout << "  | Holders of the old snapshot see MISMATCH = tamper detected. |\n";
+            std::cout << "  +-------------------------------------------------------------+\n\n";
+        }
+    }
+
+    // True iff Merkle proof for this receipt matches the published snapshot (no I/O).
+    // For dry-run / tests: false after tamper_vote() until build_tree() refreshes snapshot.
+    bool proof_matches_published_snapshot(const std::string& receipt_id) const {
+        if (!tree_built_) return false;
+        int idx = registry_.get_ballot_index(receipt_id);
+        if (idx < 0) return false;
+        const Ballot& b = ballots_[idx];
+        auto proof = tree_.generate_proof(idx);
+        return MerkleTree::verify_proof(b.to_hash(), proof, last_built_root_);
     }
 
     // ------------------------------------------------------------------
@@ -313,6 +349,12 @@ public:
     // ------------------------------------------------------------------
     void tamper_vote(const std::string& receipt_id,
                      const std::string& new_candidate) {
+        // ── Guards ────────────────────────────────────────────────────
+        if (!tree_built_) {
+            std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
+            std::cout << "      The tree must exist so the tampered hash can propagate.\n";
+            return;
+        }
         int idx = registry_.get_ballot_index(receipt_id);
         if (idx < 0) {
             std::cout << "  [!] Receipt ID not found: " << receipt_id << "\n";
@@ -322,17 +364,28 @@ public:
             std::cout << "  [!] Ballot is already invalidated -- cannot tamper.\n";
             return;
         }
+        if (ballots_[idx].candidate == new_candidate) {
+            std::cout << "  [!] New candidate is identical to the current one -- no change made.\n";
+            return;
+        }
 
-        std::string old_root = tree_built_ ? tree_.get_root() : "(tree not built)";
+        std::string old_root    = tree_.get_root();
+        std::string orig_cand   = ballots_[idx].candidate;
+        std::string orig_hash   = ballots_[idx].to_hash();
 
         std::cout << "\n";
         std::cout << "  +====== TAMPERING SIMULATION ===============================+\n";
         std::cout << "  | Target receipt  : " << receipt_id                       << "\n";
-        std::cout << "  | Original vote   : " << ballots_[idx].candidate          << "\n";
-        std::cout << "  | Original hash   : " << short_h(ballots_[idx].to_hash()) << "\n";
+        std::cout << "  | Voter           : " << ballots_[idx].voter_id           << "\n";
+        std::cout << "  | Original vote   : " << orig_cand                        << "\n";
+        std::cout << "  | Original hash   : " << short_h(orig_hash)               << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
 
+        // ── Mutate the ballot in memory ───────────────────────────────
+        if (!ballots_[idx].tampered)
+            ballots_[idx].pre_tamper_candidate = ballots_[idx].candidate;
         ballots_[idx].candidate = new_candidate;
+        ballots_[idx].tampered  = true;           // mark for all future displays
 
         std::cout << "  | Tampered vote   : " << ballots_[idx].candidate          << "\n";
         std::cout << "  | New hash        : " << short_h(ballots_[idx].to_hash()) << "\n";
@@ -342,16 +395,17 @@ public:
         // O(log n): mutates leaf node, then follows parent pointers upward.
         tree_.update(idx, ballots_[idx].to_hash());
 
+        // Intentionally do NOT update last_built_root_ — the snapshot keeps
+        // the pre-tamper root so verify_vote() correctly shows MISMATCH.
         std::string new_root = tree_.get_root();
-        std::cout << "  | Old root : " << old_root << "\n";
-        std::cout << "  | New root : " << new_root << "\n";
+        std::cout << "  | Old root (snapshot) : " << old_root  << "\n";
+        std::cout << "  | New root (live)     : " << new_root  << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
-
-        if (old_root != new_root && old_root != "(tree not built)")
-            std::cout << "  | [!!] TAMPER DETECTED: Root hash has CHANGED.\n";
-
-        std::cout << "  |      Any proof generated against the old root is INVALID.\n";
-        std::cout << "  |      Run 'Verify vote' again to confirm failure.\n";
+        std::cout << "  | [!!] TAMPER DETECTED: Root hash has CHANGED.\n";
+        std::cout << "  |      This ballot is now flagged [*** TAMPERED ***].\n";
+        std::cout << "  |      It will appear tagged in all receipt lists and summary.\n";
+        std::cout << "  |      Run option 5 (Verify vote) on this receipt to see\n";
+        std::cout << "  |      the proof MISMATCH that exposes the tampering.\n";
         std::cout << "  +===========================================================+\n\n";
     }
 
@@ -395,7 +449,9 @@ public:
         std::cout << "  | Replacing leaf with sentinel & propagating via parent ptrs...\n";
 
         // Mark the Ballot struct as invalid
-        ballots_[idx].valid = false;
+        ballots_[idx].valid     = false;
+        ballots_[idx].tampered  = false;
+        ballots_[idx].pre_tamper_candidate.clear();
 
         // O(log n): sets sentinel hash on leaf node, walks up via parent pointers
         tree_.delete_leaf(idx);
@@ -444,7 +500,9 @@ public:
         std::cout << "  | 1. Freeing voter to vote again...\n";
         
         registry_.unmark_voted(ballots_[idx].voter_id);
-        ballots_[idx].valid = false;
+        ballots_[idx].valid     = false;
+        ballots_[idx].tampered  = false;
+        ballots_[idx].pre_tamper_candidate.clear();
 
         std::cout << "  | 2. Nullifying leaf and updating tree via parent ptrs...\n";
 
@@ -466,13 +524,15 @@ public:
     // ------------------------------------------------------------------
     void display_summary() const {
         std::unordered_map<std::string, int> tally;
-        int valid_count   = 0;
-        int invalid_count = 0;
+        int valid_count    = 0;
+        int invalid_count  = 0;
+        int tampered_count = 0;
 
         for (const auto& b : ballots_) {
             if (b.valid) {
                 tally[b.candidate]++;
                 valid_count++;
+                if (b.tampered) tampered_count++;
             } else {
                 invalid_count++;
             }
@@ -484,9 +544,19 @@ public:
         std::cout << "  | Total ballots cast : " << ballots_.size()                 << "\n";
         std::cout << "  |   Valid            : " << valid_count                     << "\n";
         std::cout << "  |   Invalidated      : " << invalid_count                   << "\n";
-        std::cout << "  | Vote tally (valid ballots only):\n";
-        for (const auto& kv : tally)
-            std::cout << "  |   " << kv.first << " : " << kv.second << " vote(s)\n";
+        if (tampered_count > 0)
+            std::cout << "  |   Tampered (demo)  : " << tampered_count
+                      << "  <-- integrity compromised!\n";
+        std::cout << "  | Vote tally (valid ballots — including any tampered ones):\n";
+        for (const auto& kv : tally) {
+            int tcount = 0;
+            for (const auto& b : ballots_)
+                if (b.valid && b.tampered && b.candidate == kv.first) ++tcount;
+            std::cout << "  |   " << kv.first << " : " << kv.second << " vote(s)";
+            if (tcount > 0)
+                std::cout << "  (" << tcount << " tampered)  [*** TAMPERED ***]";
+            std::cout << "\n";
+        }
         if (tree_built_)
             std::cout << "  | Merkle root : " << tree_.get_root() << "\n";
         else
@@ -504,17 +574,22 @@ public:
     bool is_tree_built() const { return tree_built_; }
     int  ballot_count()  const { return static_cast<int>(ballots_.size()); }
 
-    // Returns all receipt IDs with a status tag for display in the menu.
+    // Returns all receipt IDs with status tags for display in the menu.
     struct ReceiptInfo {
         std::string receipt_id;
+        std::string voter_id;
+        std::string candidate;
+        std::string pre_tamper_candidate;
         bool        valid;
+        bool        tampered;
     };
 
     std::vector<ReceiptInfo> all_receipt_info() const {
         std::vector<ReceiptInfo> out;
         out.reserve(ballots_.size());
         for (const auto& b : ballots_)
-            out.push_back({ b.receipt_id, b.valid });
+            out.push_back({ b.receipt_id, b.voter_id, b.candidate,
+                            b.pre_tamper_candidate, b.valid, b.tampered });
         return out;
     }
 

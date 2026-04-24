@@ -21,7 +21,10 @@ struct Ballot {
     std::string candidate;    // chosen candidate
     std::string salt;         // random salt — ensures hash uniqueness
     std::string timestamp;    // seconds since epoch at time of casting
-    bool        valid = true; // false after invalidate_ballot() is called
+    bool        valid    = true;  // false after invalidate_ballot() / delete_ballot()
+    bool        tampered = false; // true after tamper_vote() is called (demo flag)
+    // Honest vote at cast time; set once on first tamper (for CLI dry-run labels).
+    std::string pre_tamper_candidate;
 
     // -------------------------------------------------------------------------
     // Canonical string: all fields joined by '|' delimiter.
@@ -42,10 +45,14 @@ struct Ballot {
 
     // Human-readable one-line summary for display in the CLI.
     std::string to_display() const {
-        std::string s = "[" + receipt_id + "] voter=" + voter_id +
-                        "  candidate=" + candidate +
-                        "  ts=" + timestamp;
-        if (!valid) s += "  [INVALIDATED]";
+        std::string s = "[" + receipt_id + "] voter=" + voter_id + "  ";
+        if (tampered && !pre_tamper_candidate.empty())
+            s += "vote: " + pre_tamper_candidate + " -> " + candidate + "  ";
+        else
+            s += "candidate=" + candidate + "  ";
+        s += "ts=" + timestamp;
+        if (!valid)   s += "  [INVALIDATED]";
+        if (tampered) s += "  [*** TAMPERED ***]";
         return s;
     }
 };

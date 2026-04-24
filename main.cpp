@@ -64,7 +64,7 @@ static std::string prompt(const std::string& label) {
     }
 }
 
-// Helper to select a receipt from a numbered list (shows [INVALIDATED] tag).
+// Helper to select a receipt from a numbered list (shows status tags).
 static std::string prompt_receipt_selection(
     const std::vector<VotingSystem::ReceiptInfo>& receipts)
 {
@@ -72,8 +72,17 @@ static std::string prompt_receipt_selection(
 
     std::cout << "  Available receipts:\n";
     for (size_t i = 0; i < receipts.size(); ++i) {
-        std::cout << "    " << (i + 1) << ") " << receipts[i].receipt_id;
-        if (!receipts[i].valid) std::cout << "  [DELETED / INVALIDATED]";
+        const auto& r = receipts[i];
+        std::cout << "    " << (i + 1) << ") "
+                  << r.receipt_id
+                  << "  |  voter: " << r.voter_id
+                  << "  |  ";
+        if (r.tampered && !r.pre_tamper_candidate.empty())
+            std::cout << "vote: " << r.pre_tamper_candidate << " -> " << r.candidate;
+        else
+            std::cout << "voted: " << r.candidate;
+        if (!r.valid)   std::cout << "  [DELETED / INVALIDATED]";
+        if (r.tampered) std::cout << "  [*** TAMPERED ***]";
         std::cout << "\n";
     }
     std::cout << "\n";
@@ -196,14 +205,36 @@ int main() {
         // ----------------------------------------------------------------
         } else if (choice == 6) {
             // Tamper simulation — tree_.update() O(log n) parent-pointer walk
-            if (vs.ballot_count() == 0) {
+            if (!vs.is_tree_built()) {
+                std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
+                std::cout << "      The tree must exist so the tampered hash can propagate.\n";
+            } else if (vs.ballot_count() == 0) {
                 std::cout << "  [!] No ballots have been cast yet.\n";
             } else {
                 auto receipts = vs.all_receipt_info();
                 std::string receipt = prompt_receipt_selection(receipts);
                 if (!receipt.empty()) {
-                    std::string new_cand = prompt("New (fake) candidate");
-                    vs.tamper_vote(receipt, new_cand);
+                    // Offer the same candidate list so the attacker can redirect a vote
+                    const std::vector<std::string> candidates = { "Sam", "Ali", "Sarah" };
+                    std::cout << "\n  Choose the fake (replacement) candidate:\n";
+                    for (size_t i = 0; i < candidates.size(); ++i)
+                        std::cout << "    " << (i + 1) << ".  " << candidates[i] << "\n";
+                    std::cout << "\n";
+                    std::string fake_cand;
+                    while (true) {
+                        std::string sel = prompt("Select fake candidate (1-"
+                                                 + std::to_string(candidates.size()) + ")");
+                        try {
+                            int c = std::stoi(sel);
+                            if (c >= 1 && c <= (int)candidates.size()) {
+                                fake_cand = candidates[c - 1];
+                                break;
+                            }
+                        } catch (...) {}
+                        std::cout << "  [!] Please enter a number between 1 and "
+                                  << candidates.size() << ".\n";
+                    }
+                    vs.tamper_vote(receipt, fake_cand);
                 }
             }
 
@@ -248,11 +279,22 @@ int main() {
                 std::cout << "  No ballots cast yet.\n";
             } else {
                 std::cout << "  All receipt IDs (" << receipts.size() << "):\n";
-                for (const auto& r : receipts) {
-                    std::cout << "    " << r.receipt_id;
-                    if (!r.valid) std::cout << "  [DELETED / INVALIDATED]";
+                std::cout << "  " << std::string(70, '-') << "\n";
+                for (size_t i = 0; i < receipts.size(); ++i) {
+                    const auto& r = receipts[i];
+                    std::cout << "  " << (i + 1) << ") "
+                              << r.receipt_id
+                              << "  |  voter: " << r.voter_id
+                              << "  |  ";
+                    if (r.tampered && !r.pre_tamper_candidate.empty())
+                        std::cout << "vote: " << r.pre_tamper_candidate << " -> " << r.candidate;
+                    else
+                        std::cout << "voted: " << r.candidate;
+                    if (!r.valid)   std::cout << "  [DELETED / INVALIDATED]";
+                    if (r.tampered) std::cout << "  [*** TAMPERED ***]";
                     std::cout << "\n";
                 }
+                std::cout << "  " << std::string(70, '-') << "\n";
             }
 
         // ----------------------------------------------------------------
