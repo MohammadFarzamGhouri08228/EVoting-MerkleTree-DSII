@@ -427,68 +427,114 @@ public:
             return;
         }
 
-        auto levels    = bfs_levels();
+        auto levels     = bfs_levels();
         int  total_lvls = static_cast<int>(levels.size());
-
-        const int VIS_ROWS = std::min(total_lvls, 4);
-        const int SLOT_W   = 12;
-        int bottom_slots   = 1 << (VIS_ROWS - 1);
-        int total_w        = bottom_slots * SLOT_W;
 
         std::cout << "\n";
 
-        for (int row = 0; row < VIS_ROWS; row++) {
-            const auto& lvl = levels[row];
-            int n_slots  = 1 << row;
-            int slot_w   = total_w / n_slots;
-            int n_show   = std::min(n_slots, static_cast<int>(lvl.size()));
+        if (total_lvls <= 4) {
+            // ── 2D top-down diagram — works perfectly up to 4 levels ──────
+            const int SLOT_W   = 14;
+            int bottom_slots   = 1 << (total_lvls - 1);
+            int total_w        = bottom_slots * SLOT_W;
 
-            std::string line(total_w, ' ');
-            for (int j = 0; j < n_show; j++) {
-                std::string label;
-                if (row == 0)
-                    label = "[ROOT:" + short_h(lvl[j]->hash, 6) + "]";
-                else if (lvl[j]->is_deleted)
-                    label = "[DELETED]";
-                else
-                    label = "[" + short_h(lvl[j]->hash, 8) + "]";
+            for (int row = 0; row < total_lvls; ++row) {
+                const auto& lvl = levels[row];
+                int n_slots  = 1 << row;
+                int slot_w   = total_w / n_slots;
+                int n_show   = std::min(n_slots, static_cast<int>(lvl.size()));
 
-                int center = j * slot_w + slot_w / 2;
-                int start  = center - static_cast<int>(label.size()) / 2;
-                start = std::max(0, std::min(start, total_w - static_cast<int>(label.size())));
-                for (int k = 0; k < static_cast<int>(label.size()) && start + k < total_w; k++)
-                    line[start + k] = label[k];
-            }
-            std::cout << "  " << line << "\n";
+                std::string line(total_w, ' ');
+                for (int j = 0; j < n_show; ++j) {
+                    std::string label;
+                    if (row == 0)
+                        label = "[ROOT:" + short_h(lvl[j]->hash, 6) + "]";
+                    else if (lvl[j]->is_deleted)
+                        label = "[DELETED]";
+                    else if (row == total_lvls - 1)
+                        label = "[L" + std::to_string(j) + ":" + short_h(lvl[j]->hash, 5) + "]";
+                    else
+                        label = "[" + short_h(lvl[j]->hash, 8) + "]";
 
-            if (row < VIS_ROWS - 1) {
-                int next_slot_w = slot_w / 2;
-                int n_conn = (slot_w >= 24) ? 2 : 1;
-                for (int cr = 0; cr < n_conn; cr++) {
-                    float t = (float)(cr + 1) / (float)(n_conn + 1);
-                    std::string cline(total_w, ' ');
-                    for (int j = 0; j < n_show; j++) {
-                        int pc  = j * slot_w + slot_w / 2;
-                        int lcc = (2 * j    ) * next_slot_w + next_slot_w / 2;
-                        int rcc = (2 * j + 1) * next_slot_w + next_slot_w / 2;
-                        int sp  = (int)std::round(pc + t * (lcc - pc));
-                        int bp  = (int)std::round(pc + t * (rcc - pc));
-                        if (sp >= 0 && sp < total_w) cline[sp] = '/';
-                        if (bp >= 0 && bp < total_w) cline[bp] = '\\';
+                    int center = j * slot_w + slot_w / 2;
+                    int start  = center - (int)label.size() / 2;
+                    start = std::max(0, std::min(start, total_w - (int)label.size()));
+                    for (int k = 0; k < (int)label.size() && start + k < total_w; ++k)
+                        line[start + k] = label[k];
+                }
+                std::cout << "  " << line << "\n";
+
+                if (row < total_lvls - 1) {
+                    int next_slot_w = slot_w / 2;
+                    for (int cr = 0; cr < 2; ++cr) {
+                        float t = (float)(cr + 1) / 3.0f;
+                        std::string cline(total_w, ' ');
+                        for (int j = 0; j < n_show; ++j) {
+                            int pc  = j * slot_w + slot_w / 2;
+                            int lcc = (2*j    ) * next_slot_w + next_slot_w / 2;
+                            int rcc = (2*j + 1) * next_slot_w + next_slot_w / 2;
+                            int sp  = (int)std::round(pc + t * (lcc - pc));
+                            int bp  = (int)std::round(pc + t * (rcc - pc));
+                            if (sp >= 0 && sp < total_w) cline[sp] = '/';
+                            if (bp >= 0 && bp < total_w) cline[bp] = '\\';
+                        }
+                        std::cout << "  " << cline << "\n";
                     }
-                    std::cout << "  " << cline << "\n";
                 }
             }
+
+        } else {
+            // ── Level-by-level wrapped layout — scales to any tree size ───
+            // Each level gets a labelled section; nodes wrap at console width
+            // so the display is always bounded horizontally and scrollable
+            // vertically.
+            const int CONSOLE_W    = 76;   // conservative 80-char terminal minus indent
+            const int NODE_W       = 15;   // chars reserved per node slot
+            const int NODES_PER_ROW = std::max(1, CONSOLE_W / NODE_W);
+
+            for (int li = 0; li < total_lvls; ++li) {
+                const auto& nodes = levels[li];
+                int  n         = (int)nodes.size();
+                bool is_root   = (li == 0);
+                bool is_leaves = (li == total_lvls - 1);
+
+                // Section header
+                std::string hdr;
+                if (is_root)        hdr = "ROOT";
+                else if (is_leaves) hdr = "LEAVES  (level " + std::to_string(li) + ")";
+                else                hdr = "Level " + std::to_string(li);
+
+                std::string node_count = "  [" + std::to_string(n) +
+                                         " node" + (n != 1 ? "s" : "") + "]";
+                std::cout << "  " << hdr << node_count << "\n";
+                std::cout << "  " << std::string(CONSOLE_W, '-') << "\n";
+
+                // Print nodes in wrapped rows
+                for (int i = 0; i < n; ++i) {
+                    if (i % NODES_PER_ROW == 0) std::cout << "    ";
+
+                    std::string label;
+                    if (nodes[i]->is_deleted)
+                        label = "[**DELETED**]";
+                    else if (is_leaves)
+                        label = "[L" + std::to_string(i) + ":"
+                              + short_h(nodes[i]->hash, 7) + "]";
+                    else
+                        label = "[" + short_h(nodes[i]->hash, 10) + "..]";
+
+                    std::cout << std::left << std::setw(NODE_W) << label;
+                    if ((i + 1) % NODES_PER_ROW == 0 || i == n - 1)
+                        std::cout << "\n";
+                }
+
+                // Vertical connector between levels
+                if (li < total_lvls - 1)
+                    std::cout << "       |\n       v\n";
+
+                std::cout << "\n";
+            }
         }
 
-        if (total_lvls > VIS_ROWS) {
-            int hidden = total_lvls - VIS_ROWS;
-            std::string pad(total_w / 3, ' ');
-            std::cout << "  " << pad
-                      << "... (" << hidden << " more level"
-                      << (hidden > 1 ? "s" : "") << "  |  "
-                      << leaf_count() << " leaves total) ...\n";
-        }
         std::cout << "\n";
     }
 
@@ -574,13 +620,11 @@ public:
         }
         std::cout << "  +---------+-------+-----------+------------------------------------+\n";
 
-        std::cout << "\n  ASCII Diagram";
         if (level_count() <= 4)
-            std::cout << "  (full tree -- " << level_count() << " levels):\n";
+            std::cout << "\n  2D Diagram  (all " << level_count() << " levels — root at top, leaves at bottom):\n";
         else
-            std::cout << "  (top " << std::min(4, level_count())
-                      << " of " << level_count()
-                      << " levels -- tree too deep for full display):\n";
+            std::cout << "\n  Level-by-Level View  (" << level_count()
+                      << " levels — too wide for 2D, shown as wrapped rows):\n";
 
         print_tree_visual();
     }
