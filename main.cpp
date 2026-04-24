@@ -33,8 +33,8 @@ static void print_menu() {
     std::cout << "  |  1.  Register voter                                         |\n";
     std::cout << "  |  2.  Cast vote                                              |\n";
     std::cout << "  |  3.  Build Merkle Tree                                      |\n";
-    std::cout << "  |  4.  Display Merkle Tree (visualise levels)                 |\n";
-    std::cout << "  |  5.  Verify vote  (Merkle proof -- parent-pointer walk)      |\n";
+    std::cout << "  |  4.  View Merkle Tree                                       |\n";
+    std::cout << "  |  5.  Verify vote  (simple walkthrough)                     |\n";
     std::cout << "  |  6.  Tamper with a ballot  (tamper-detection demo)          |\n";
     std::cout << "  |  7.  Invalidate a ballot   (delete_leaf demo)               |\n";
     std::cout << "  |  8.  Delete a ballot       (allow voter to re-vote)         |\n";
@@ -197,8 +197,11 @@ int main() {
                     std::cout << "  [!] No ballots have been cast yet.\n";
                 } else {
                     std::string receipt = prompt_receipt_selection(receipts);
-                    if (!receipt.empty())
+                    if (!receipt.empty()) {
+                        std::cout << "  We will rebuild the path from this ballot to the root\n";
+                        std::cout << "  and compare the final hash with the published root.\n";
                         vs.verify_vote(receipt);
+                    }
                 }
             }
 
