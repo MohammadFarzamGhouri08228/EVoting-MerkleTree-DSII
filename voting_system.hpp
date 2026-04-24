@@ -593,6 +593,15 @@ public:
         return out;
     }
 
+    bool receipt_info_for(const std::string& receipt_id, ReceiptInfo& out) const {
+        int idx = registry_.get_ballot_index(receipt_id);
+        if (idx < 0) return false;
+        const auto& b = ballots_[idx];
+        out = { b.receipt_id, b.voter_id, b.candidate,
+                b.pre_tamper_candidate, b.valid, b.tampered };
+        return true;
+    }
+
     // Plain receipt list (backward-compatible helper).
     std::vector<std::string> all_receipts() const {
         std::vector<std::string> out;

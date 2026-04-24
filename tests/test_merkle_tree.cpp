@@ -95,7 +95,8 @@ void test_insert_odd_sized_tree() {
     tree.insert("D"); // Tree was odd (3), now even (4)
     
     MerkleTree tree_full;
-    tree_full.build({"A", "B", "C", "D"});
+    std::vector<std::string> expected_leaves = {"A", "B", "C", "D"};
+    tree_full.build(expected_leaves);
     
     ASSERT_EQ(tree.get_root(), tree_full.get_root());
     ASSERT_EQ(tree.leaf_count(), 4);
@@ -111,7 +112,8 @@ void test_update_tamper() {
     tree.update(2, "X");
     
     MerkleTree tree_full;
-    tree_full.build({"A", "B", "X", "D"});
+    std::vector<std::string> expected_leaves = {"A", "B", "X", "D"};
+    tree_full.build(expected_leaves);
     
     ASSERT_EQ(tree.get_root(), tree_full.get_root());
 }
@@ -126,7 +128,8 @@ void test_delete_tombstone() {
     tree.delete_leaf(1);
     
     MerkleTree tree_full;
-    tree_full.build({"A", MerkleTree::deleted_sentinel(), "C", "D"});
+    std::vector<std::string> expected_leaves = {"A", MerkleTree::deleted_sentinel(), "C", "D"};
+    tree_full.build(expected_leaves);
     
     ASSERT_EQ(tree.get_root(), tree_full.get_root());
     ASSERT_TRUE(tree.is_leaf_deleted(1));
@@ -187,6 +190,56 @@ void test_voting_tamper_proof_snapshot() {
     ASSERT_TRUE(vs.proof_matches_published_snapshot(r));
 }
 
+void test_voting_tamper_marker_and_original_vote_tracking() {
+    SuppressOutput so;
+    VotingSystem vs;
+    vs.register_voter("V1");
+    std::string r = vs.cast_vote("V1", "Sam");
+    vs.build_tree();
+
+    vs.tamper_vote(r, "Ali");
+
+    VotingSystem::ReceiptInfo info{};
+    ASSERT_TRUE(vs.receipt_info_for(r, info));
+    ASSERT_TRUE(info.tampered);
+    ASSERT_TRUE(info.valid);
+    ASSERT_EQ(info.pre_tamper_candidate, "Sam");
+    ASSERT_EQ(info.candidate, "Ali");
+
+    vs.tamper_vote(r, "Sarah");
+    ASSERT_TRUE(vs.receipt_info_for(r, info));
+    ASSERT_EQ(info.pre_tamper_candidate, "Sam");
+    ASSERT_EQ(info.candidate, "Sarah");
+}
+
+void test_tamper_flags_clear_after_invalidate_and_delete() {
+    SuppressOutput so;
+    VotingSystem vs;
+    vs.register_voter("V1");
+    vs.register_voter("V2");
+    std::string r1 = vs.cast_vote("V1", "Sam");
+    std::string r2 = vs.cast_vote("V2", "Ali");
+    vs.build_tree();
+
+    vs.tamper_vote(r1, "Sarah");
+    vs.tamper_vote(r2, "Sam");
+    vs.invalidate_ballot(r1);
+    vs.delete_ballot(r2);
+
+    VotingSystem::ReceiptInfo info1{};
+    VotingSystem::ReceiptInfo info2{};
+    ASSERT_TRUE(vs.receipt_info_for(r1, info1));
+    ASSERT_TRUE(vs.receipt_info_for(r2, info2));
+
+    ASSERT_FALSE(info1.valid);
+    ASSERT_FALSE(info1.tampered);
+    ASSERT_EQ(info1.pre_tamper_candidate, "");
+
+    ASSERT_FALSE(info2.valid);
+    ASSERT_FALSE(info2.tampered);
+    ASSERT_EQ(info2.pre_tamper_candidate, "");
+}
+
 // Integration tests with VotingSystem
 void test_voting_system_integration() {
     SuppressOutput so; // Suppress stdout to keep test output clean
@@ -232,6 +285,8 @@ int main() {
     RUN_TEST(test_proof_generation_and_verification);
     RUN_TEST(test_proof_failure_tampered_or_deleted);
     RUN_TEST(test_voting_tamper_proof_snapshot);
+    RUN_TEST(test_voting_tamper_marker_and_original_vote_tracking);
+    RUN_TEST(test_tamper_flags_clear_after_invalidate_and_delete);
     RUN_TEST(test_voting_system_integration);
 
     std::cout << "\n========================================\n";
