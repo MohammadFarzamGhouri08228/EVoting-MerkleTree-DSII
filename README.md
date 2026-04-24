@@ -108,6 +108,76 @@ cl /std:c++17 /EHsc /O2 /Fe:evoteverify.exe main.cpp
 evoteverify.exe      # Windows
 ```
 
+### Run Automated Presentation Demo
+
+This runs a hardcoded, perfectly timed scenario designed for a live viva. It demonstrates all core DSII concepts (Hash Table lookups, Merkle Tree construction, O(log n) proofs, and tamper detection) without requiring any manual typing.
+
+```bash
+g++ -std=c++17 -O2 -o demo demo.cpp
+./demo.exe
+```
+
+---
+
+## Sample Output
+
+### 1. Merkle Tree Visualization (50 leaves)
+```text
+  +==============================================================+
+  |                MERKLE TREE  --  STATUS REPORT               |
+  +==============================================================+
+  |  Leaves          : 50                                         |
+  |  Height          : 7 levels                                   |
+  |  Total nodes     : 102                                        |
+  |  log2(leaves)    : 5.64  (min tree height = 7)                |
+  |  Balanced        : NEAR --  odd leaves duplicated via ceil rule |
+  |  Root hash       : 5db186f124e8c3e1d44793cb6bcabc27b0a88afb87e9b337cd.. |
+  +--------------------------------------------------------------+
+
+  ASCII Diagram  (top 4 of 7 levels -- tree too deep for full display):
+
+                                           [ROOT:5db186..]                                        
+                                          /               \                                       
+                                  /                               \                               
+                    [cb091c24..]                                    [87ddd71d..]                  
+                      /       \                                       /       \                   
+                  /               \                               /               \               
+        [9279fb49..]            [9a6d044f..]            [3538cc8b..]            [b6af7e57..]      
+            /   \                   /   \                   /   \                   /   \         
+          /       \               /       \               /       \               /       \       
+  [f52b8616..][0621f753..][598bf370..][64b73037..][3e254609..][29ea61ee..][99cb8de9..]            
+                                  ... (3 more levels  |  50 leaves total) ...
+```
+
+### 2. Merkle Proof Verification (O(log n) parent-pointer walk)
+```text
+  +====== Merkle Inclusion Proof =============================+
+  | Receipt    : RCP-8b427a1c901a
+  | Leaf hash  : 04a4475488102302324f923b03623910c28a2f41c...
+  | Proof steps: 6  (tree height = 7 levels)
+  | Path       : LEAF -(R)->  -(R)->  -(L)->  -(L)->  -(L)->  -(L)-> ROOT
+  +-----------------------------------------------------------+
+  |
+  |  Step 1 / 6  (sibling is RIGHT):
+  |    [current] (left ) : 04a4475488102302..
+  |    [sibling] (right) : 3b91da1683d2a02c..
+  |    SHA256(L + R)      : f52b8616ef93d11b..
+  |
+  ... (steps 2-5 omitted for brevity) ...
+  |
+  |  Step 6 / 6  (sibling is LEFT):
+  |    [sibling] (left ) : cb091c24249a0e7a..
+  |    [current] (right) : 87ddd71d66835265..
+  |    SHA256(L + R)      : 5db186f124e8c3e1..
+  |
+  +-----------------------------------------------------------+
+  | Computed root  : 5db186f124e8c3e1d44793cb6bcabc27b0a88afb87e9b337cd54911ab963e942
+  | Expected root  : 5db186f124e8c3e1d44793cb6bcabc27b0a88afb87e9b337cd54911ab963e942
+  +-----------------------------------------------------------+
+  | Result : [OK]  MATCH  --  Vote VERIFIED successfully.    |
+  +===========================================================+
+```
+
 ---
 
 ## Demo Workflow
@@ -173,7 +243,7 @@ The project is divided into **5 phases** across **3 team members**.
 
 ---
 
-## Phase 4 — System Integration & CLI 🔄 In Progress
+## Phase 4 — System Integration & CLI ✅ Complete
 **Goal:** Wire all modules together into a usable CLI program.
 
 **Owner: Member 1 & Member 2 (joint)**
@@ -184,25 +254,25 @@ The project is divided into **5 phases** across **3 team members**.
 | `register_voter()`, `cast_vote()`, `build_tree()` methods | Done |
 | `verify_vote()`, `tamper_vote()`, `display_summary()` methods | Done |
 | `main.cpp` — numbered menu, user input handling | Done |
-| End-to-end testing of full workflow | Pending |
-| Edge case handling (empty tree, bad receipt ID, etc.) | Pending |
+| End-to-end testing of full workflow | Done |
+| Edge case handling (empty tree, bad receipt ID, etc.) | Done |
 
 ---
 
-## Phase 5 — Demo, Tests & Documentation 📋 Pending
+## Phase 5 — Demo, Tests & Documentation ✅ Complete
 **Goal:** Polish for submission and live presentation.
 
 **Owner: Member 3 (primary) + all review**
 
 | Task | Status |
 |---|---|
-| `demo.cpp` — scripted scenario (hardcoded voters, votes, tamper, verify) | Pending |
-| `tests/test_ballot.cpp` — hashing consistency, field storage | Pending |
-| `tests/test_voter_registry.cpp` — insert, lookup, duplicate detection | Pending |
-| `tests/test_merkle_tree.cpp` — build, root, odd leaves, proof correctness | Pending |
-| Complexity comments review across all files | Pending |
-| README sample output screenshots | Pending |
-| Final code review pass (all 3 members) | Pending |
+| `demo.cpp` — scripted scenario (hardcoded voters, votes, tamper, verify) | Done |
+| `tests/test_ballot.cpp` — hashing consistency, field storage | Done |
+| `tests/test_voter_registry.cpp` — insert, lookup, duplicate detection | Done |
+| `tests/test_merkle_tree.cpp` — build, root, odd leaves, proof correctness | Done |
+| Complexity comments review across all files | Done |
+| README sample output screenshots | Done |
+| Final code review pass (all 3 members) | Done |
 
 ---
 

@@ -91,11 +91,45 @@ public:
     // Register a voter  —  O(1) average (hash table insert)
     // ------------------------------------------------------------------
     bool register_voter(const std::string& voter_id) {
-        if (!registry_.register_voter(voter_id)) {
-            std::cout << "  [!] '" << voter_id << "' is already registered.\n";
+        // ── Input validation ──────────────────────────────────────────
+        if (voter_id.size() < 2) {
+            std::cout << "  [!] Voter ID is too short (minimum 2 characters).\n";
+            std::cout << "      Example IDs: V001, alice, voter_7\n";
             return false;
         }
-        std::cout << "  [+] Registered voter: " << voter_id << "\n";
+        if (voter_id.find('|') != std::string::npos) {
+            std::cout << "  [!] Voter ID must not contain the '|' character.\n";
+            return false;
+        }
+        for (char c : voter_id) {
+            if (std::isspace(static_cast<unsigned char>(c))) {
+                std::cout << "  [!] Voter ID must not contain spaces.\n";
+                std::cout << "      Tip: use underscores instead, e.g. \"john_doe\"\n";
+                return false;
+            }
+        }
+
+        // ── Duplicate check ───────────────────────────────────────────
+        if (!registry_.register_voter(voter_id)) {
+            bool already_voted = registry_.has_voted(voter_id);
+            std::cout << "  [!] '" << voter_id << "' is already registered.\n";
+            if (already_voted)
+                std::cout << "      This voter has already cast their ballot.\n";
+            else
+                std::cout << "      This voter is registered but has not voted yet.\n"
+                          << "      They may cast a vote using option 2.\n";
+            return false;
+        }
+
+        // ── Success ───────────────────────────────────────────────────
+        int total = registry_.voter_count();
+        std::cout << "\n";
+        std::cout << "  +-------- Registration Confirmed ----------------------------+\n";
+        std::cout << "  |  Voter ID  : " << voter_id                                << "\n";
+        std::cout << "  |  Status    : Eligible to vote                             |\n";
+        std::cout << "  |  Registry  : " << total << " voter(s) now registered\n";
+        std::cout << "  +------------------------------------------------------------+\n";
+        std::cout << "  [>] Next: use option 2 to cast a vote for this voter.\n";
         return true;
     }
 
@@ -378,7 +412,7 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // Delete a ballot  —  O(log n) via tree_.delete_leaf()
+    // Delete a ballot  --  O(log n) via tree_.delete_leaf()
     //
     // Similar to invalidate_ballot, but completely removes the vote AND
     // unmarks the voter so they can vote again.

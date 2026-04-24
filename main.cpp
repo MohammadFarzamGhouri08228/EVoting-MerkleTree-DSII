@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <algorithm>
 #include "voting_system.hpp"
 
 // ---------------------------------------------------------------------------
@@ -120,15 +121,51 @@ int main() {
         // ----------------------------------------------------------------
         } else if (choice == 1) {
             // Register voter
+            std::cout << "  +-------- Register New Voter --------------------------------+\n";
+            std::cout << "  |  Assigns a unique Voter ID to a citizen, making them      |\n";
+            std::cout << "  |  eligible to cast exactly one vote in this election.       |\n";
+            std::cout << "  |                                                            |\n";
+            std::cout << "  |  ID rules:  at least 2 characters, no spaces or '|'       |\n";
+            std::cout << "  +------------------------------------------------------------+\n\n";
             std::string id = prompt("Voter ID");
             vs.register_voter(id);
 
         // ----------------------------------------------------------------
         } else if (choice == 2) {
             // Cast vote
-            std::string voter_id  = prompt("Voter ID");
-            std::string candidate = prompt("Candidate name");
-            vs.cast_vote(voter_id, candidate);
+            std::string voter_id = prompt("Voter ID");
+
+            // Candidate selection menu
+            const std::vector<std::string> candidates = { "Sam", "Ali", "Sarah" };
+            std::cout << "\n";
+            std::cout << "  +-------- Candidates on the Ballot --------------------------+\n";
+            for (size_t i = 0; i < candidates.size(); ++i)
+                std::cout << "  |    " << (i + 1) << ".  " << candidates[i]
+                          << std::string(53 - candidates[i].size(), ' ') << "|\n";
+            std::cout << "  +------------------------------------------------------------+\n\n";
+
+            std::string candidate;
+            while (true) {
+                std::string sel = prompt("Select candidate (1-" + std::to_string(candidates.size()) + ")");
+                try {
+                    int c = std::stoi(sel);
+                    if (c >= 1 && c <= static_cast<int>(candidates.size())) {
+                        candidate = candidates[c - 1];
+                        break;
+                    }
+                } catch (...) {}
+                std::cout << "  [!] Please enter a number between 1 and "
+                          << candidates.size() << ".\n";
+            }
+
+            std::cout << "\n  Confirm vote:  " << voter_id << "  ->  " << candidate << "\n";
+            std::string confirm = prompt("Type yes to confirm");
+            std::transform(confirm.begin(), confirm.end(), confirm.begin(), ::tolower);
+            if (confirm != "yes") {
+                std::cout << "  [!] Vote cancelled.\n";
+            } else {
+                vs.cast_vote(voter_id, candidate);
+            }
 
         // ----------------------------------------------------------------
         } else if (choice == 3) {
