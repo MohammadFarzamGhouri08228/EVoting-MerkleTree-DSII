@@ -1,17 +1,23 @@
 # Merkle Tree Visualization Plan (HTML / D3.js)
 
-This document outlines the strategy for visualizing our 50+ leaf Merkle Tree using a modern, interactive web-based approach. 
+This document outlines the strategy for visualizing our 50+ leaf Merkle Tree using a modern, interactive web-based approach.
 
-Since C++ lacks native, lightweight graphical libraries for complex tree rendering, our C++ application will act as the **data engine**, generating a standalone HTML file containing the tree structure and a lightweight JavaScript rendering library (D3.js).
+The current direction is a **live local web visualization**. Instead of only exporting a static HTML snapshot, the C++ application acts as the **data engine and local server**, serving the page and exposing live JSON endpoints that the frontend polls for updates.
 
 ---
 
 ## 1. The Architecture (How it works)
 
-1.  **Data Generation (C++):** When the user selects the "Visualize Tree" option in the CLI, the `MerkleTree` class will perform a Breadth-First Search (BFS) or Depth-First Search (DFS) traversal.
-2.  **JSON Export:** During traversal, the C++ code will format the nodes and their parent-child relationships into a JSON string.
-3.  **HTML Generation:** The C++ code will write this JSON string directly into a pre-defined HTML template (which includes the D3.js library via CDN).
-4.  **Auto-Launch:** The C++ program will save this file as `merkle_tree_vis.html` in the project directory and automatically open it in the user's default web browser using a system call (e.g., `system("start merkle_tree_vis.html")` on Windows).
+1.  **Local Server (C++):** When the user selects the visualization option in the CLI, the application starts a lightweight HTTP server on `localhost`.
+2.  **Live JSON State:** The backend exposes endpoints such as `/api/state`, containing:
+    * registered voters
+    * candidate totals
+    * ballot count
+    * Merkle root
+    * full tree structure
+3.  **Frontend Fetching:** The browser loads a single HTML page from the local server, and JavaScript polls the JSON endpoint every second.
+4.  **Auto-Launch:** The C++ program automatically opens the local visualization URL in the user's default browser.
+5.  **Real-Time Updates:** When the user registers voters, casts votes, invalidates ballots, or rebuilds the tree in the CLI, the frontend reflects those changes without restarting the browser.
 
 ---
 
@@ -57,26 +63,42 @@ The current option `4. Display Merkle Tree (visualise levels)` will be split or 
 
 ```text
   |  4.  Display Merkle Tree (ASCII Terminal View)              |
-  |  5.  Export & Open Interactive Web Visualization            |
+  |  5.  Open Live Interactive Web Visualization                |
 ```
 
 ### User Flow
 1.  User loads the dataset (Option 12).
 2.  User builds the tree (Option 3).
-3.  User selects the new Web Visualization option.
+3.  User selects the live Web Visualization option.
 4.  The CLI displays:
     ```text
-    [*] Generating tree data...
-    [*] Writing merkle_tree_vis.html...
-    [+] Success! Opening in your default web browser...
+    [*] Starting local visualization server...
+    [+] Live server running at http://127.0.0.1:8080/
+    [*] Opening in your default web browser...
     ```
 5.  The browser opens, displaying the interactive D3.js graph.
+6.  The user continues using the CLI, and the frontend refreshes automatically.
 
 ---
 
 ## 4. Implementation Steps (For the Developer)
 
-1.  **Create the HTML/JS Template:** Write a standalone HTML file containing the D3.js logic required to render a hierarchical tree from a JSON object.
-2.  **C++ JSON Serializer:** Add a method to `MerkleTree` (e.g., `export_json()`) that traverses the tree pointers and builds a string formatted as `{"name": "Root", "children": [...]}`.
-3.  **C++ File Writer:** Add a method to `VotingSystem` that takes the JSON string, injects it into the HTML template string, and writes it to disk.
-4.  **System Call:** Add the OS-specific command to launch the generated HTML file automatically.
+1.  **Create the HTML/JS Template:** Serve a single HTML page from the local backend.
+2.  **C++ JSON Serializer:** Use `MerkleTree` traversal to build a JSON tree such as `{"name": "Root", "children": [...]}`.
+3.  **Live Summary Endpoint:** Expose election summary JSON for counts, candidates, and root hash.
+4.  **Polling Logic:** Have the frontend poll `/api/state` and redraw when the state changes.
+5.  **System Call:** Open the `localhost` URL automatically.
+
+---
+
+## 5. Next Frontend Improvements
+
+These are intentionally not implemented yet, but should stay on the roadmap:
+
+1.  Add click-to-focus on a node so clicking a leaf highlights its path up to the root.
+2.  Add a proof mode for option 6, where the verified ballot path is colored differently in the visualization.
+3.  Add labels below leaves for voter/candidate in demo mode, with a toggle to hide sensitive info.
+4.  Add smooth collapse/expand for deeper trees so 50+ leaves stay readable.
+5.  Add a mini overview map or reset button cluster for easier navigation on large trees.
+6.  Add a status filter panel so only valid, tampered, or invalidated ballots are shown.
+7.  Improve the typography and spacing further so the sidebar feels denser and more polished on large datasets.

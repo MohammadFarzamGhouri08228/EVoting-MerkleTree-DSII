@@ -7,6 +7,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 #include "sha256.hpp"
 
 struct MerkleNode {
@@ -84,6 +85,103 @@ class MerkleTree {
         for (const auto& lvl : bfs_levels())
             c += static_cast<int>(lvl.size());
         return c;
+    }
+
+    static std::string json_escape(const std::string& s) {
+        std::ostringstream out;
+        for (char ch : s) {
+            switch (ch) {
+                case '\\': out << "\\\\"; break;
+                case '"':  out << "\\\""; break;
+                case '\b': out << "\\b"; break;
+                case '\f': out << "\\f"; break;
+                case '\n': out << "\\n"; break;
+                case '\r': out << "\\r"; break;
+                case '\t': out << "\\t"; break;
+                default:
+                    if (static_cast<unsigned char>(ch) < 0x20) {
+                        out << "\\u"
+                            << std::hex << std::setw(4) << std::setfill('0')
+                            << static_cast<int>(static_cast<unsigned char>(ch))
+                            << std::dec << std::setfill(' ');
+                    } else {
+                        out << ch;
+                    }
+            }
+        }
+        return out.str();
+    }
+
+    std::string visualization_json_for(
+        const MerkleNode* node,
+        int level,
+        const std::unordered_map<const MerkleNode*, int>& leaf_index_map,
+        const std::vector<std::string>& voter_ids,
+        const std::vector<std::string>& candidates,
+        const std::vector<std::string>& receipt_ids,
+        const std::vector<bool>& tampered_flags) const
+    {
+        std::ostringstream oss;
+        const bool is_root = (node == root_);
+        const bool is_leaf = node->is_leaf();
+        const bool is_deleted = node->is_deleted;
+
+        std::string kind = "internal";
+        if (is_root) kind = "root";
+        else if (is_deleted) kind = "deleted";
+        else if (is_leaf) kind = "leaf";
+
+        std::string label;
+        if (is_root) label = "ROOT: " + short_h(node->hash, 8);
+        else if (is_deleted) label = "[NULLIFIED]";
+        else if (is_leaf) label = "LEAF: " + short_h(node->hash, 8);
+        else label = "Lvl " + std::to_string(level) + ": " + short_h(node->hash, 8);
+
+        oss << "{";
+        oss << "\"name\":\"" << json_escape(label) << "\",";
+        oss << "\"kind\":\"" << kind << "\",";
+        oss << "\"hash\":\"" << json_escape(node->hash) << "\",";
+        oss << "\"shortHash\":\"" << json_escape(short_h(node->hash, 12)) << "\",";
+        oss << "\"level\":" << level << ",";
+        oss << "\"deleted\":" << (is_deleted ? "true" : "false");
+
+        if (is_leaf) {
+            auto it = leaf_index_map.find(node);
+            if (it != leaf_index_map.end()) {
+                const int idx = it->second;
+                oss << ",\"leafIndex\":" << idx;
+                if (idx >= 0 && idx < static_cast<int>(voter_ids.size())) {
+                    oss << ",\"voterId\":\"" << json_escape(voter_ids[idx]) << "\"";
+                    oss << ",\"candidate\":\"" << json_escape(candidates[idx]) << "\"";
+                    oss << ",\"receiptId\":\"" << json_escape(receipt_ids[idx]) << "\"";
+                    oss << ",\"tampered\":" << (tampered_flags[idx] ? "true" : "false");
+                }
+            }
+        }
+
+        std::vector<std::string> children;
+        if (node->left) {
+            children.push_back(visualization_json_for(
+                node->left, level + 1, leaf_index_map,
+                voter_ids, candidates, receipt_ids, tampered_flags));
+        }
+        if (node->right) {
+            children.push_back(visualization_json_for(
+                node->right, level + 1, leaf_index_map,
+                voter_ids, candidates, receipt_ids, tampered_flags));
+        }
+
+        if (!children.empty()) {
+            oss << ",\"children\":[";
+            for (size_t i = 0; i < children.size(); ++i) {
+                if (i) oss << ",";
+                oss << children[i];
+            }
+            oss << "]";
+        }
+
+        oss << "}";
+        return oss.str();
     }
 
 public:
@@ -264,6 +362,29 @@ public:
         if (leaf_index < 0 || leaf_index >= static_cast<int>(leaves_.size()))
             return false;
         return leaves_[leaf_index]->is_deleted;
+    }
+
+    std::string export_visualization_json(
+        const std::vector<std::string>& voter_ids,
+        const std::vector<std::string>& candidates,
+        const std::vector<std::string>& receipt_ids,
+        const std::vector<bool>& tampered_flags) const
+    {
+        if (!root_)
+            throw std::logic_error("Tree has not been built yet.");
+        if (voter_ids.size() != leaves_.size() ||
+            candidates.size() != leaves_.size() ||
+            receipt_ids.size() != leaves_.size() ||
+            tampered_flags.size() != leaves_.size()) {
+            throw std::invalid_argument("Leaf metadata size does not match leaf count.");
+        }
+
+        std::unordered_map<const MerkleNode*, int> leaf_index_map;
+        for (size_t i = 0; i < leaves_.size(); ++i)
+            leaf_index_map[leaves_[i]] = static_cast<int>(i);
+
+        return visualization_json_for(
+            root_, 0, leaf_index_map, voter_ids, candidates, receipt_ids, tampered_flags);
     }
 
     void print_tree_visual() const {

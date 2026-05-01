@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merkle Tree Visualization</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      --bg: #f6f3ea;
+      --panel: rgba(255, 252, 245, 0.9);
+      --ink: #132a2f;
+      --muted: #5b6c70;
+      --edge: #a8b6b2;
+      --root: #d9a404;
+      --internal: #7ca6b1;
+      --leaf: #2d8f5a;
+      --deleted: #c84b3f;
+      --tampered: #f28c28;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff4cd 0%, transparent 28%),
+        radial-gradient(circle at top right, #dceef0 0%, transparent 24%),
+        linear-gradient(180deg, #f3efe4 0%, #eef4f3 100%);
+      min-height: 100vh;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) 1fr;
+      gap: 18px;
+      padding: 18px;
+      min-height: 100vh;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(19, 42, 47, 0.08);
+      backdrop-filter: blur(10px);
+    }
+    .sidebar {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .stat {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
+      font-size: 0.95rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .helper-copy {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+      padding: 12px 14px;
+      background: rgba(19, 42, 47, 0.04);
+      border-radius: 14px;
+    }
+    .candidate-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .candidate-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+    }
+    .candidate-row strong {
+      display: block;
+      font-size: 0.96rem;
+    }
+    .candidate-row span {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      font-weight: 600;
+      font-size: 0.88rem;
+    }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      flex: none;
+    }
+    .workspace {
+      position: relative;
+      overflow: hidden;
+      min-height: 78vh;
+    }
+    #chart {
+      width: 100%;
+      height: 100%;
+      min-height: 78vh;
+    }
+    .node-card {
+      fill: rgba(255,255,255,0.94);
+      stroke-width: 2.5px;
+      rx: 14px;
+      ry: 14px;
+    }
+    .node text {
+      font-size: 12px;
+      fill: var(--ink);
+      pointer-events: none;
+    }
+    .link {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 1.6px;
+    }
+    .link.deleted-link {
+      stroke: var(--deleted);
+      stroke-dasharray: 5 5;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 140ms ease, transform 140ms ease;
+      max-width: 320px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(19, 42, 47, 0.94);
+      color: #f9faf7;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .tooltip strong { color: #ffe28a; }
+    .toolbar {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      display: flex;
+      gap: 10px;
+      z-index: 3;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(19, 42, 47, 0.16);
+    }
+    button:hover { background: #20454d; }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .workspace, #chart { min-height: 68vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <div>
+        <h2>Interactive View</h2>
+        <h1>Merkle Tree Structure</h1>
+        <p style="margin-top:8px;color:var(--muted);">Zoom with the mouse wheel, drag to pan, and hover a leaf to inspect ballot metadata.</p>
+      </div>
+      <div class="helper-copy">
+        The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
+      </div>
+      <div>
+        <div class="stat"><span>Root hash</span><strong id="rootHash">-</strong></div>
+        <div class="stat"><span>Total levels</span><strong id="levelCount">-</strong></div>
+        <div class="stat"><span>Leaf nodes</span><strong id="leafCount">-</strong></div>
+        <div class="stat"><span>Registered voters</span><strong id="registeredVoters">-</strong></div>
+        <div class="stat"><span>Valid ballots</span><strong id="validBallots">-</strong></div>
+        <div class="stat"><span>Invalidated ballots</span><strong id="invalidBallots">-</strong></div>
+      </div>
+      <div>
+        <h2>Candidates</h2>
+        <div id="candidateList" class="candidate-list"></div>
+      </div>
+      <div>
+        <h2>Legend</h2>
+        <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
+      </div>
+    </aside>
+    <main class="panel workspace">
+      <div class="toolbar">
+        <button id="fitBtn">Fit to Screen</button>
+      </div>
+      <svg id="chart"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+  <script>
+    const treeData = {"name":"ROOT: dada6058..","kind":"root","hash":"dada6058e2e179878a4c86a10ee5a3025e54c379ad99fee6bd2d1819bee73532","shortHash":"dada6058e2e1..","level":0,"deleted":false,"leafIndex":0,"voterId":"FZ","candidate":"Sam","receiptId":"RCP-c544293930c1","tampered":false};
+    const summary = {"registeredVoters":2,"validBallots":1,"invalidBallots":0,"candidates":[{"name":"Sam","votes":1,"tamperedVotes":0}]};
+
+    const svg = d3.select("#chart");
+    const workspace = document.querySelector(".workspace");
+    const tooltip = d3.select("#tooltip");
+    const width = () => workspace.clientWidth;
+    const height = () => Math.max(workspace.clientHeight, 620);
+    const root = d3.hierarchy(treeData);
+    const levels = root.height + 1;
+    const leaves = root.leaves().length;
+
+    document.getElementById("rootHash").textContent = treeData.shortHash;
+    document.getElementById("levelCount").textContent = String(levels);
+    document.getElementById("leafCount").textContent = String(leaves);
+    document.getElementById("registeredVoters").textContent = String(summary.registeredVoters);
+    document.getElementById("validBallots").textContent = String(summary.validBallots);
+    document.getElementById("invalidBallots").textContent = String(summary.invalidBallots);
+
+    const candidateList = document.getElementById("candidateList");
+    summary.candidates.forEach(candidate => {
+      const row = document.createElement("div");
+      row.className = "candidate-row";
+      row.innerHTML = `
+        <div>
+          <strong>${candidate.name}</strong>
+          <span>${candidate.votes} valid vote(s)${candidate.tamperedVotes ? `, ${candidate.tamperedVotes} tampered demo vote(s)` : ""}</span>
+        </div>
+        <div class="badge">${candidate.votes}</div>
+      `;
+      candidateList.appendChild(row);
+    });
+
+    const treeLayout = d3.tree().nodeSize([120, 120]);
+    treeLayout(root);
+
+    const xExtent = d3.extent(root.descendants(), d => d.x);
+    const yExtent = d3.extent(root.descendants(), d => d.y);
+    const paddingX = 110;
+    const paddingY = 90;
+    const xOffset = paddingX - xExtent[0];
+    const yOffset = paddingY;
+
+    svg.attr("viewBox", [0, 0, width(), height()]);
+
+    const zoomLayer = svg.append("g");
+    const content = zoomLayer.append("g");
+
+    let isApplyingClamp = false;
+    const zoom = d3.zoom()
+      .scaleExtent([0.35, 2.5])
+      .on("zoom", event => {
+        if (isApplyingClamp) return;
+        const clamped = clampTransform(event.transform);
+        zoomLayer.attr("transform", clamped);
+        if (clamped.x !== event.transform.x || clamped.y !== event.transform.y || clamped.k !== event.transform.k) {
+          isApplyingClamp = true;
+          svg.call(zoom.transform, clamped);
+          isApplyingClamp = false;
+        }
+      });
+
+    svg.call(zoom);
+
+    const linkGen = d3.linkVertical()
+      .x(d => d.x + xOffset)
+      .y(d => d.y + yOffset);
+
+    content.selectAll(".link")
+      .data(root.links())
+      .join("path")
+      .attr("class", d => d.target.data.deleted ? "link deleted-link" : "link")
+      .attr("d", linkGen);
+
+    const node = content.selectAll(".node")
+      .data(root.descendants())
+      .join("g")
+      .attr("class", "node")
+      .attr("transform", d => `translate(${d.x + xOffset},${d.y + yOffset})`);
+
+    const strokeFor = data => {
+      if (data.kind === "root") return "var(--root)";
+      if (data.deleted) return "var(--deleted)";
+      if (data.tampered) return "var(--tampered)";
+      if (data.kind === "leaf") return "var(--leaf)";
+      return "var(--internal)";
+    };
+
+    const fillFor = data => {
+      if (data.kind === "root") return "#fff7d6";
+      if (data.deleted) return "#f6e3e1";
+      if (data.tampered) return "#fff0df";
+      if (data.kind === "leaf") return "#e8f7ee";
+      return "#edf5f7";
+    };
+
+    node.append("rect")
+      .attr("class", "node-card")
+      .attr("x", -66)
+      .attr("y", -22)
+      .attr("width", 132)
+      .attr("height", 44)
+      .attr("fill", d => fillFor(d.data))
+      .attr("stroke", d => strokeFor(d.data));
+
+    node.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .text(d => d.data.name);
+
+    node.on("mousemove", (event, d) => {
+      const data = d.data;
+      const lines = [
+        `<strong>${data.name}</strong>`,
+        `Full hash: ${data.hash}`
+      ];
+      if (typeof data.leafIndex === "number") lines.push(`Leaf index: ${data.leafIndex}`);
+      if (data.voterId) lines.push(`Voter ID: ${data.voterId}`);
+      if (data.candidate) lines.push(`Candidate: ${data.candidate}`);
+      if (data.receiptId) lines.push(`Receipt ID: ${data.receiptId}`);
+      if (data.deleted) lines.push(`Status: This ballot was deleted or invalidated.`);
+      else if (data.tampered) lines.push(`Status: This ballot is flagged as tampered.`);
+
+      tooltip
+        .html(lines.join("<br>"))
+        .style("left", `${event.offsetX + 18}px`)
+        .style("top", `${event.offsetY + 18}px`)
+        .style("opacity", 1)
+        .style("transform", "translateY(0)");
+    }).on("mouseleave", () => {
+      tooltip.style("opacity", 0).style("transform", "translateY(6px)");
+    });
+
+    function clampTransform(transform) {
+      const bounds = content.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = transform.k;
+      const contentWidth = bounds.width * scale;
+      const contentHeight = bounds.height * scale;
+      const centerX = fullWidth / 2 - (bounds.x + bounds.width / 2) * scale;
+      const baseTop = 48 - bounds.y * scale;
+
+      let minX;
+      let maxX;
+      if (contentWidth < fullWidth - 240) {
+        minX = centerX - 90;
+        maxX = centerX + 90;
+      } else {
+        minX = fullWidth - 120 - (bounds.x + bounds.width) * scale;
+        maxX = 120 - bounds.x * scale;
+      }
+
+      let minY;
+      let maxY;
+      if (contentHeight < fullHeight - 180) {
+        minY = baseTop - 40;
+        maxY = baseTop + 120;
+      } else {
+        minY = fullHeight - 90 - (bounds.y + bounds.height) * scale;
+        maxY = 40 - bounds.y * scale;
+      }
+
+      return d3.zoomIdentity
+        .translate(
+          Math.max(minX, Math.min(maxX, transform.x)),
+          Math.max(minY, Math.min(maxY, transform.y))
+        )
+        .scale(scale);
+    }
+
+    function fitToScreen() {
+      const bounds = content.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = Math.min(
+        1.1,
+        0.88 / Math.max(bounds.width / fullWidth, bounds.height / fullHeight)
+      );
+      const tx = (fullWidth - bounds.width * scale) / 2 - bounds.x * scale;
+      const ty = 50 - bounds.y * scale;
+      svg.transition().duration(500).call(zoom.transform, clampTransform(
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      ));
+    }
+
+    document.getElementById("fitBtn").addEventListener("click", fitToScreen);
+    window.addEventListener("resize", () => {
+      svg.attr("viewBox", [0, 0, width(), height()]);
+      fitToScreen();
+    });
+    fitToScreen();
+  </script>
+</body>
+</html>

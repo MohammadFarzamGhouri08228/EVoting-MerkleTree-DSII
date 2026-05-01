@@ -2,7 +2,8 @@
 // main.cpp  —  E-VoteVerify+  CLI entry point
 //
 // Compile (Windows / Linux / macOS):
-//   g++ -std=c++17 -O2 -o evoteverify main.cpp
+//   g++ -std=c++17 -O2 -o evoteverify main.cpp -lws2_32   (Windows / MinGW)
+//   g++ -std=c++17 -O2 -o evoteverify main.cpp            (Linux / macOS)
 //
 // Run:
 //   ./evoteverify        (Linux / macOS)
@@ -33,15 +34,16 @@ static void print_menu() {
     std::cout << "  |  1.  Register voter                                         |\n";
     std::cout << "  |  2.  Cast vote                                              |\n";
     std::cout << "  |  3.  Build Merkle Tree                                      |\n";
-    std::cout << "  |  4.  View Merkle Tree                                       |\n";
-    std::cout << "  |  5.  Verify vote  (simple walkthrough)                     |\n";
-    std::cout << "  |  6.  Tamper with a ballot  (tamper-detection demo)          |\n";
-    std::cout << "  |  7.  Invalidate a ballot   (delete_leaf demo)               |\n";
-    std::cout << "  |  8.  Delete a ballot       (allow voter to re-vote)         |\n";
-    std::cout << "  |  9.  Show election summary                                  |\n";
-    std::cout << "  |  10. Show all receipt IDs                                   |\n";
-    std::cout << "  |  11. Show voter registry                                    |\n";
-    std::cout << "  |  12. Load sample dataset                                    |\n";
+    std::cout << "  |  4.  Display Merkle Tree (ASCII terminal view)              |\n";
+    std::cout << "  |  5.  Open Live Interactive Web Visualization                |\n";
+    std::cout << "  |  6.  Verify vote  (simple walkthrough)                      |\n";
+    std::cout << "  |  7.  Tamper with a ballot  (tamper-detection demo)          |\n";
+    std::cout << "  |  8.  Invalidate a ballot   (delete_leaf demo)               |\n";
+    std::cout << "  |  9.  Delete a ballot       (allow voter to re-vote)         |\n";
+    std::cout << "  |  10. Show election summary                                  |\n";
+    std::cout << "  |  11. Show all receipt IDs                                   |\n";
+    std::cout << "  |  12. Show voter registry                                    |\n";
+    std::cout << "  |  13. Load sample dataset                                    |\n";
     std::cout << "  |  0.  Exit                                                   |\n";
     std::cout << "  +------------------------------------------------------------+\n";
     std::cout << "  Choice: ";
@@ -188,6 +190,11 @@ int main() {
 
         // ----------------------------------------------------------------
         } else if (choice == 5) {
+            // Launch live interactive visualization
+            vs.export_web_visualization();
+
+        // ----------------------------------------------------------------
+        } else if (choice == 6) {
             // Verify vote — generate_proof() walks up via parent pointers
             if (!vs.is_tree_built()) {
                 std::cout << "  [!] Build the tree first (option 3).\n";
@@ -206,7 +213,7 @@ int main() {
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 6) {
+        } else if (choice == 7) {
             // Tamper simulation — tree_.update() O(log n) parent-pointer walk
             if (!vs.is_tree_built()) {
                 std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
@@ -242,7 +249,7 @@ int main() {
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 7) {
+        } else if (choice == 8) {
             // Invalidate ballot — tree_.delete_leaf() O(log n) parent-pointer walk
             if (!vs.is_tree_built()) {
                 std::cout << "  [!] Build the tree first (option 3).\n";
@@ -256,7 +263,7 @@ int main() {
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 8) {
+        } else if (choice == 9) {
             // Delete ballot — tree_.delete_leaf() and unmark_voted()
             if (!vs.is_tree_built()) {
                 std::cout << "  [!] Build the tree first (option 3).\n";
@@ -270,12 +277,12 @@ int main() {
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 9) {
+        } else if (choice == 10) {
             // Election summary
             vs.display_summary();
 
         // ----------------------------------------------------------------
-        } else if (choice == 10) {
+        } else if (choice == 11) {
             // All receipts
             auto receipts = vs.all_receipt_info();
             if (receipts.empty()) {
@@ -301,12 +308,12 @@ int main() {
             }
 
         // ----------------------------------------------------------------
-        } else if (choice == 11) {
+        } else if (choice == 12) {
             // Voter registry
             vs.print_registry();
 
         // ----------------------------------------------------------------
-        } else if (choice == 12) {
+        } else if (choice == 13) {
             // Load dataset
             std::cout << "  Available datasets:\n";
             std::cout << "    1) data/dataset.csv (50 voters)\n";
@@ -327,7 +334,7 @@ int main() {
 
         // ----------------------------------------------------------------
         } else {
-            std::cout << "  [!] Invalid choice. Enter 0-12.\n";
+            std::cout << "  [!] Invalid choice. Enter 0-13.\n";
         }
 
         std::cout << "\n";

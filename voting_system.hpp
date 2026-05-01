@@ -22,9 +22,13 @@
 #include <random>
 #include <chrono>
 #include <fstream>
+#include <cstdlib>
+#include <memory>
+#include <mutex>
 #include "ballot.hpp"
 #include "voter_registry.hpp"
 #include "merkle_tree.hpp"
+#include "live_visualization_server.hpp"
 
 class VotingSystem {
 
@@ -39,6 +43,11 @@ class VotingSystem {
     // by running build_tree() again, which re-commits to current ballots).
     std::string         last_built_root_;
     bool                tree_built_ = false;
+    mutable std::mutex  state_mutex_;
+    LiveVisualizationServer vis_server_;
+    bool                dataset_loaded_ = false;
+    std::string         dataset_source_ = "";
+    bool                changed_after_dataset_load_ = false;
 
     // ------------------------------------------------------------------
     // Internal helpers
@@ -78,6 +87,966 @@ class VotingSystem {
         return (h.size() > 16) ? h.substr(0, 16) + "..." : h;
     }
 
+    static std::string json_escape(const std::string& s) {
+        std::ostringstream out;
+        for (char ch : s) {
+            switch (ch) {
+                case '\\': out << "\\\\"; break;
+                case '"':  out << "\\\""; break;
+                case '\b': out << "\\b"; break;
+                case '\f': out << "\\f"; break;
+                case '\n': out << "\\n"; break;
+                case '\r': out << "\\r"; break;
+                case '\t': out << "\\t"; break;
+                default:
+                    if (static_cast<unsigned char>(ch) < 0x20) {
+                        out << "\\u"
+                            << std::hex << std::setw(4) << std::setfill('0')
+                            << static_cast<int>(static_cast<unsigned char>(ch))
+                            << std::dec << std::setfill(' ');
+                    } else {
+                        out << ch;
+                    }
+            }
+        }
+        return out.str();
+    }
+
+    static bool open_in_browser(const std::string& filepath) {
+#ifdef _WIN32
+        std::string command = "start \"\" \"" + filepath + "\"";
+#elif __APPLE__
+        std::string command = "open \"" + filepath + "\"";
+#else
+        std::string command = "xdg-open \"" + filepath + "\"";
+#endif
+        return std::system(command.c_str()) == 0;
+    }
+
+    static std::string visualization_html_template(
+        const std::string& tree_json,
+        const std::string& summary_json) {
+        std::ostringstream html;
+        html << R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merkle Tree Visualization</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      --bg: #f6f3ea;
+      --panel: rgba(255, 252, 245, 0.9);
+      --ink: #132a2f;
+      --muted: #5b6c70;
+      --edge: #a8b6b2;
+      --root: #d9a404;
+      --internal: #7ca6b1;
+      --leaf: #2d8f5a;
+      --deleted: #c84b3f;
+      --tampered: #f28c28;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff4cd 0%, transparent 28%),
+        radial-gradient(circle at top right, #dceef0 0%, transparent 24%),
+        linear-gradient(180deg, #f3efe4 0%, #eef4f3 100%);
+      min-height: 100vh;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) 1fr;
+      gap: 18px;
+      padding: 18px;
+      min-height: 100vh;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(19, 42, 47, 0.08);
+      backdrop-filter: blur(10px);
+    }
+    .sidebar {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .stat {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
+      font-size: 0.95rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .helper-copy {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+      padding: 12px 14px;
+      background: rgba(19, 42, 47, 0.04);
+      border-radius: 14px;
+    }
+    .candidate-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .candidate-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+    }
+    .candidate-row strong {
+      display: block;
+      font-size: 0.96rem;
+    }
+    .candidate-row span {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      font-weight: 600;
+      font-size: 0.88rem;
+    }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      flex: none;
+    }
+    .workspace {
+      position: relative;
+      overflow: hidden;
+      min-height: 78vh;
+    }
+    #chart {
+      width: 100%;
+      height: 100%;
+      min-height: 78vh;
+    }
+    .node-card {
+      fill: rgba(255,255,255,0.94);
+      stroke-width: 2.5px;
+      rx: 14px;
+      ry: 14px;
+    }
+    .node text {
+      font-size: 12px;
+      fill: var(--ink);
+      pointer-events: none;
+    }
+    .link {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 1.6px;
+    }
+    .link.deleted-link {
+      stroke: var(--deleted);
+      stroke-dasharray: 5 5;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 140ms ease, transform 140ms ease;
+      max-width: 320px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(19, 42, 47, 0.94);
+      color: #f9faf7;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .tooltip strong { color: #ffe28a; }
+    .toolbar {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      display: flex;
+      gap: 10px;
+      z-index: 3;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(19, 42, 47, 0.16);
+    }
+    button:hover { background: #20454d; }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .workspace, #chart { min-height: 68vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <div>
+        <h2>Interactive View</h2>
+        <h1>Merkle Tree Structure</h1>
+        <p style="margin-top:8px;color:var(--muted);">Zoom with the mouse wheel, drag to pan, and hover a leaf to inspect ballot metadata.</p>
+      </div>
+      <div class="helper-copy">
+        The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
+      </div>
+      <div>
+        <h2>Data Source</h2>
+        <div class="helper-copy">
+          <strong id="sourceLabel">-</strong><br>
+          <span id="sourceDetail">-</span>
+        </div>
+      </div>
+      <div>
+        <div class="stat"><span>Root hash</span><strong id="rootHash">-</strong></div>
+        <div class="stat"><span>Total levels</span><strong id="levelCount">-</strong></div>
+        <div class="stat"><span>Leaf nodes</span><strong id="leafCount">-</strong></div>
+        <div class="stat"><span>Registered voters</span><strong id="registeredVoters">-</strong></div>
+        <div class="stat"><span>Valid ballots</span><strong id="validBallots">-</strong></div>
+        <div class="stat"><span>Invalidated ballots</span><strong id="invalidBallots">-</strong></div>
+      </div>
+      <div>
+        <h2>Candidates</h2>
+        <div id="candidateList" class="candidate-list"></div>
+      </div>
+      <div>
+        <h2>Legend</h2>
+        <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
+      </div>
+    </aside>
+    <main class="panel workspace">
+      <div class="toolbar">
+        <button id="fitBtn">Fit to Screen</button>
+      </div>
+      <svg id="chart"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+  <script>
+    const treeData = )HTML";
+        html << tree_json;
+        html << R"HTML(;
+    const summary = )HTML";
+        html << summary_json;
+        html << R"HTML(;
+
+    const svg = d3.select("#chart");
+    const workspace = document.querySelector(".workspace");
+    const tooltip = d3.select("#tooltip");
+    const width = () => workspace.clientWidth;
+    const height = () => Math.max(workspace.clientHeight, 620);
+    const root = d3.hierarchy(treeData);
+    const levels = root.height + 1;
+    const leaves = root.leaves().length;
+
+    document.getElementById("rootHash").textContent = treeData.shortHash;
+    document.getElementById("levelCount").textContent = String(levels);
+    document.getElementById("leafCount").textContent = String(leaves);
+    document.getElementById("registeredVoters").textContent = String(summary.registeredVoters);
+    document.getElementById("validBallots").textContent = String(summary.validBallots);
+    document.getElementById("invalidBallots").textContent = String(summary.invalidBallots);
+
+    const candidateList = document.getElementById("candidateList");
+    summary.candidates.forEach(candidate => {
+      const row = document.createElement("div");
+      row.className = "candidate-row";
+      row.innerHTML = `
+        <div>
+          <strong>${candidate.name}</strong>
+          <span>${candidate.votes} valid vote(s)${candidate.tamperedVotes ? `, ${candidate.tamperedVotes} tampered demo vote(s)` : ""}</span>
+        </div>
+        <div class="badge">${candidate.votes}</div>
+      `;
+      candidateList.appendChild(row);
+    });
+
+    const treeLayout = d3.tree().nodeSize([120, 120]);
+    treeLayout(root);
+
+    const xExtent = d3.extent(root.descendants(), d => d.x);
+    const yExtent = d3.extent(root.descendants(), d => d.y);
+    const paddingX = 110;
+    const paddingY = 90;
+    const xOffset = paddingX - xExtent[0];
+    const yOffset = paddingY;
+
+    svg.attr("viewBox", [0, 0, width(), height()]);
+
+    const zoomLayer = svg.append("g");
+    const content = zoomLayer.append("g");
+
+    let isApplyingClamp = false;
+    const zoom = d3.zoom()
+      .scaleExtent([0.35, 2.5])
+      .on("zoom", event => {
+        if (isApplyingClamp) return;
+        const clamped = clampTransform(event.transform);
+        zoomLayer.attr("transform", clamped);
+        if (clamped.x !== event.transform.x || clamped.y !== event.transform.y || clamped.k !== event.transform.k) {
+          isApplyingClamp = true;
+          svg.call(zoom.transform, clamped);
+          isApplyingClamp = false;
+        }
+      });
+
+    svg.call(zoom);
+
+    const linkGen = d3.linkVertical()
+      .x(d => d.x + xOffset)
+      .y(d => d.y + yOffset);
+
+    content.selectAll(".link")
+      .data(root.links())
+      .join("path")
+      .attr("class", d => d.target.data.deleted ? "link deleted-link" : "link")
+      .attr("d", linkGen);
+
+    const node = content.selectAll(".node")
+      .data(root.descendants())
+      .join("g")
+      .attr("class", "node")
+      .attr("transform", d => `translate(${d.x + xOffset},${d.y + yOffset})`);
+
+    const strokeFor = data => {
+      if (data.kind === "root") return "var(--root)";
+      if (data.deleted) return "var(--deleted)";
+      if (data.tampered) return "var(--tampered)";
+      if (data.kind === "leaf") return "var(--leaf)";
+      return "var(--internal)";
+    };
+
+    const fillFor = data => {
+      if (data.kind === "root") return "#fff7d6";
+      if (data.deleted) return "#f6e3e1";
+      if (data.tampered) return "#fff0df";
+      if (data.kind === "leaf") return "#e8f7ee";
+      return "#edf5f7";
+    };
+
+    node.append("rect")
+      .attr("class", "node-card")
+      .attr("x", -66)
+      .attr("y", -22)
+      .attr("width", 132)
+      .attr("height", 44)
+      .attr("fill", d => fillFor(d.data))
+      .attr("stroke", d => strokeFor(d.data));
+
+    node.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.35em")
+      .text(d => d.data.name);
+
+    node.on("mousemove", (event, d) => {
+      const data = d.data;
+      const lines = [
+        `<strong>${data.name}</strong>`,
+        `Full hash: ${data.hash}`
+      ];
+      if (typeof data.leafIndex === "number") lines.push(`Leaf index: ${data.leafIndex}`);
+      if (data.voterId) lines.push(`Voter ID: ${data.voterId}`);
+      if (data.candidate) lines.push(`Candidate: ${data.candidate}`);
+      if (data.receiptId) lines.push(`Receipt ID: ${data.receiptId}`);
+      if (data.deleted) lines.push(`Status: This ballot was deleted or invalidated.`);
+      else if (data.tampered) lines.push(`Status: This ballot is flagged as tampered.`);
+
+      tooltip
+        .html(lines.join("<br>"))
+        .style("left", `${event.offsetX + 18}px`)
+        .style("top", `${event.offsetY + 18}px`)
+        .style("opacity", 1)
+        .style("transform", "translateY(0)");
+    }).on("mouseleave", () => {
+      tooltip.style("opacity", 0).style("transform", "translateY(6px)");
+    });
+
+    function clampTransform(transform) {
+      const bounds = content.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = transform.k;
+      const contentWidth = bounds.width * scale;
+      const contentHeight = bounds.height * scale;
+      const centerX = fullWidth / 2 - (bounds.x + bounds.width / 2) * scale;
+      const baseTop = 48 - bounds.y * scale;
+
+      let minX;
+      let maxX;
+      if (contentWidth < fullWidth - 240) {
+        minX = centerX - 90;
+        maxX = centerX + 90;
+      } else {
+        minX = fullWidth - 120 - (bounds.x + bounds.width) * scale;
+        maxX = 120 - bounds.x * scale;
+      }
+
+      let minY;
+      let maxY;
+      if (contentHeight < fullHeight - 180) {
+        minY = baseTop - 40;
+        maxY = baseTop + 120;
+      } else {
+        minY = fullHeight - 90 - (bounds.y + bounds.height) * scale;
+        maxY = 40 - bounds.y * scale;
+      }
+
+      return d3.zoomIdentity
+        .translate(
+          Math.max(minX, Math.min(maxX, transform.x)),
+          Math.max(minY, Math.min(maxY, transform.y))
+        )
+        .scale(scale);
+    }
+
+    function fitToScreen() {
+      const bounds = content.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = Math.min(
+        1.1,
+        0.88 / Math.max(bounds.width / fullWidth, bounds.height / fullHeight)
+      );
+      const tx = (fullWidth - bounds.width * scale) / 2 - bounds.x * scale;
+      const ty = 50 - bounds.y * scale;
+      svg.transition().duration(500).call(zoom.transform, clampTransform(
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      ));
+    }
+
+    document.getElementById("fitBtn").addEventListener("click", fitToScreen);
+    window.addEventListener("resize", () => {
+      svg.attr("viewBox", [0, 0, width(), height()]);
+      fitToScreen();
+    });
+    fitToScreen();
+  </script>
+</body>
+</html>)HTML";
+        return html.str();
+    }
+
+    static std::string live_visualization_html_template() {
+        std::ostringstream html;
+        html << R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merkle Tree Visualization</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      --bg: #f6f3ea;
+      --panel: rgba(255, 252, 245, 0.9);
+      --ink: #132a2f;
+      --muted: #5b6c70;
+      --edge: #a8b6b2;
+      --root: #d9a404;
+      --internal: #7ca6b1;
+      --leaf: #2d8f5a;
+      --deleted: #c84b3f;
+      --tampered: #f28c28;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff4cd 0%, transparent 28%),
+        radial-gradient(circle at top right, #dceef0 0%, transparent 24%),
+        linear-gradient(180deg, #f3efe4 0%, #eef4f3 100%);
+      min-height: 100vh;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) 1fr;
+      gap: 18px;
+      padding: 18px;
+      min-height: 100vh;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(19, 42, 47, 0.08);
+      backdrop-filter: blur(10px);
+    }
+    .sidebar {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .stat {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
+      font-size: 0.95rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .helper-copy {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+      padding: 12px 14px;
+      background: rgba(19, 42, 47, 0.04);
+      border-radius: 14px;
+    }
+    .candidate-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .candidate-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(19, 42, 47, 0.08);
+    }
+    .candidate-row strong {
+      display: block;
+      font-size: 0.96rem;
+    }
+    .candidate-row span {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      font-weight: 600;
+      font-size: 0.88rem;
+    }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      flex: none;
+    }
+    .workspace {
+      position: relative;
+      overflow: hidden;
+      min-height: 78vh;
+    }
+    #chart {
+      width: 100%;
+      height: 100%;
+      min-height: 78vh;
+    }
+    .node-card {
+      fill: rgba(255,255,255,0.94);
+      stroke-width: 2.5px;
+      rx: 14px;
+      ry: 14px;
+    }
+    .node text {
+      font-size: 12px;
+      fill: var(--ink);
+      pointer-events: none;
+    }
+    .link {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 1.6px;
+    }
+    .link.deleted-link {
+      stroke: var(--deleted);
+      stroke-dasharray: 5 5;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 140ms ease, transform 140ms ease;
+      max-width: 320px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(19, 42, 47, 0.94);
+      color: #f9faf7;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .tooltip strong { color: #ffe28a; }
+    .toolbar {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      display: flex;
+      gap: 10px;
+      z-index: 3;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #17343b;
+      color: white;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(19, 42, 47, 0.16);
+    }
+    button:hover { background: #20454d; }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .workspace, #chart { min-height: 68vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <div>
+        <h2>Interactive View</h2>
+        <h1>Merkle Tree Structure</h1>
+        <p style="margin-top:8px;color:var(--muted);">This page stays connected to the running C++ CLI. Register voters, cast votes, build the tree, or invalidate ballots there, and this view refreshes automatically.</p>
+      </div>
+      <div class="helper-copy">
+        The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
+      </div>
+      <div>
+        <div class="stat"><span>Root hash</span><strong id="rootHash">-</strong></div>
+        <div class="stat"><span>Total levels</span><strong id="levelCount">-</strong></div>
+        <div class="stat"><span>Leaf nodes</span><strong id="leafCount">-</strong></div>
+        <div class="stat"><span>Registered voters</span><strong id="registeredVoters">-</strong></div>
+        <div class="stat"><span>Ballots cast</span><strong id="ballotCount">-</strong></div>
+        <div class="stat"><span>Valid ballots</span><strong id="validBallots">-</strong></div>
+        <div class="stat"><span>Invalidated ballots</span><strong id="invalidBallots">-</strong></div>
+      </div>
+      <div>
+        <h2>Candidates</h2>
+        <div id="candidateList" class="candidate-list"></div>
+      </div>
+      <div class="helper-copy">
+        Live data comes from a lightweight local server started by option 5. The browser asks for a fresh JSON snapshot every second and redraws when the election state changes.
+      </div>
+      <div>
+        <h2>Legend</h2>
+        <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
+        <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
+      </div>
+    </aside>
+    <main class="panel workspace">
+      <div class="toolbar">
+        <button id="fitBtn">Fit to Screen</button>
+      </div>
+      <svg id="chart"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+  <script>
+    const svg = d3.select("#chart");
+    const workspace = document.querySelector(".workspace");
+    const tooltip = d3.select("#tooltip");
+    const width = () => workspace.clientWidth;
+    const height = () => Math.max(workspace.clientHeight, 620);
+
+    svg.attr("viewBox", [0, 0, width(), height()]);
+
+    const zoomLayer = svg.append("g");
+    let currentContent = null;
+    let lastSignature = "";
+    let isApplyingClamp = false;
+
+    const zoom = d3.zoom()
+      .scaleExtent([0.35, 2.5])
+      .on("zoom", event => {
+        if (isApplyingClamp) return;
+        const clamped = clampTransform(event.transform);
+        zoomLayer.attr("transform", clamped);
+        if (clamped.x !== event.transform.x || clamped.y !== event.transform.y || clamped.k !== event.transform.k) {
+          isApplyingClamp = true;
+          svg.call(zoom.transform, clamped);
+          isApplyingClamp = false;
+        }
+      });
+
+    svg.call(zoom);
+
+    function strokeFor(data) {
+      if (data.kind === "root") return "var(--root)";
+      if (data.deleted) return "var(--deleted)";
+      if (data.tampered) return "var(--tampered)";
+      if (data.kind === "leaf") return "var(--leaf)";
+      return "var(--internal)";
+    }
+
+    function fillFor(data) {
+      if (data.kind === "root") return "#fff7d6";
+      if (data.deleted) return "#f6e3e1";
+      if (data.tampered) return "#fff0df";
+      if (data.kind === "leaf") return "#e8f7ee";
+      return "#edf5f7";
+    }
+
+    function attachTooltip(nodeSelection) {
+      nodeSelection.on("mousemove", (event, d) => {
+        const data = d.data;
+        const lines = [
+          `<strong>${data.name}</strong>`,
+          `Full hash: ${data.hash}`
+        ];
+        if (typeof data.leafIndex === "number") lines.push(`Leaf index: ${data.leafIndex}`);
+        if (data.voterId) lines.push(`Voter ID: ${data.voterId}`);
+        if (data.candidate) lines.push(`Candidate: ${data.candidate}`);
+        if (data.receiptId) lines.push(`Receipt ID: ${data.receiptId}`);
+        if (data.deleted) lines.push(`Status: This ballot was deleted or invalidated.`);
+        else if (data.tampered) lines.push(`Status: This ballot is flagged as tampered.`);
+
+        tooltip
+          .html(lines.join("<br>"))
+          .style("left", `${event.offsetX + 18}px`)
+          .style("top", `${event.offsetY + 18}px`)
+          .style("opacity", 1)
+          .style("transform", "translateY(0)");
+      }).on("mouseleave", () => {
+        tooltip.style("opacity", 0).style("transform", "translateY(6px)");
+      });
+    }
+
+    function updateSummary(state) {
+      const treeData = state.tree;
+      const summary = state.summary;
+      const root = d3.hierarchy(treeData);
+      document.getElementById("sourceLabel").textContent = summary.sourceLabel || "-";
+      document.getElementById("sourceDetail").textContent = summary.sourceDetail || "-";
+      document.getElementById("rootHash").textContent = treeData.shortHash || "-";
+      document.getElementById("levelCount").textContent = String(root.height + 1);
+      document.getElementById("leafCount").textContent = String(root.leaves().length);
+      document.getElementById("registeredVoters").textContent = String(summary.registeredVoters);
+      document.getElementById("ballotCount").textContent = String(summary.ballotCount);
+      document.getElementById("validBallots").textContent = String(summary.validBallots);
+      document.getElementById("invalidBallots").textContent = String(summary.invalidBallots);
+
+      const candidateList = document.getElementById("candidateList");
+      candidateList.innerHTML = "";
+      summary.candidates.forEach(candidate => {
+        const row = document.createElement("div");
+        row.className = "candidate-row";
+        row.innerHTML = `
+          <div>
+            <strong>${candidate.name}</strong>
+            <span>${candidate.votes} valid vote(s)${candidate.tamperedVotes ? `, ${candidate.tamperedVotes} tampered demo vote(s)` : ""}</span>
+          </div>
+          <div class="badge">${candidate.votes}</div>
+        `;
+        candidateList.appendChild(row);
+      });
+    }
+
+    function renderTree(treeData) {
+      zoomLayer.selectAll("*").remove();
+      const content = zoomLayer.append("g");
+      currentContent = content;
+
+      const root = d3.hierarchy(treeData);
+      const treeLayout = d3.tree().nodeSize([120, 120]);
+      treeLayout(root);
+
+      const xExtent = d3.extent(root.descendants(), d => d.x);
+      const paddingX = 110;
+      const paddingY = 90;
+      const xOffset = paddingX - xExtent[0];
+      const yOffset = paddingY;
+
+      const linkGen = d3.linkVertical()
+        .x(d => d.x + xOffset)
+        .y(d => d.y + yOffset);
+
+      content.selectAll(".link")
+        .data(root.links())
+        .join("path")
+        .attr("class", d => d.target.data.deleted ? "link deleted-link" : "link")
+        .attr("d", linkGen);
+
+      const node = content.selectAll(".node")
+        .data(root.descendants())
+        .join("g")
+        .attr("class", "node")
+        .attr("transform", d => `translate(${d.x + xOffset},${d.y + yOffset})`);
+
+      node.append("rect")
+        .attr("class", "node-card")
+        .attr("x", -66)
+        .attr("y", -22)
+        .attr("width", 132)
+        .attr("height", 44)
+        .attr("fill", d => fillFor(d.data))
+        .attr("stroke", d => strokeFor(d.data));
+
+      node.append("text")
+        .attr("text-anchor", "middle")
+        .attr("dy", "0.35em")
+        .text(d => d.data.name);
+
+      attachTooltip(node);
+    }
+
+    function clampTransform(transform) {
+      if (!currentContent) return transform;
+
+      const bounds = currentContent.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = transform.k;
+      const contentWidth = bounds.width * scale;
+      const contentHeight = bounds.height * scale;
+      const centerX = fullWidth / 2 - (bounds.x + bounds.width / 2) * scale;
+      const baseTop = 48 - bounds.y * scale;
+
+      let minX;
+      let maxX;
+      if (contentWidth < fullWidth - 240) {
+        minX = centerX - 90;
+        maxX = centerX + 90;
+      } else {
+        minX = fullWidth - 120 - (bounds.x + bounds.width) * scale;
+        maxX = 120 - bounds.x * scale;
+      }
+
+      let minY;
+      let maxY;
+      if (contentHeight < fullHeight - 180) {
+        minY = baseTop - 40;
+        maxY = baseTop + 120;
+      } else {
+        minY = fullHeight - 90 - (bounds.y + bounds.height) * scale;
+        maxY = 40 - bounds.y * scale;
+      }
+
+      return d3.zoomIdentity
+        .translate(
+          Math.max(minX, Math.min(maxX, transform.x)),
+          Math.max(minY, Math.min(maxY, transform.y))
+        )
+        .scale(scale);
+    }
+
+    function fitToScreen() {
+      if (!currentContent) return;
+      const bounds = currentContent.node().getBBox();
+      const fullWidth = width();
+      const fullHeight = height();
+      const scale = Math.min(
+        1.1,
+        0.88 / Math.max(bounds.width / fullWidth, bounds.height / fullHeight)
+      );
+      const tx = (fullWidth - bounds.width * scale) / 2 - bounds.x * scale;
+      const ty = 50 - bounds.y * scale;
+      svg.transition().duration(350).call(
+        zoom.transform,
+        clampTransform(d3.zoomIdentity.translate(tx, ty).scale(scale))
+      );
+    }
+
+    function applyState(state) {
+      if (!state || !state.tree) return;
+      updateSummary(state);
+      renderTree(state.tree);
+      fitToScreen();
+    }
+
+    async function refreshState() {
+      try {
+        const response = await fetch("/api/state", { cache: "no-store" });
+        if (!response.ok) return;
+        const state = await response.json();
+        const signature = JSON.stringify(state);
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+        applyState(state);
+      } catch (error) {
+        console.error("Visualization refresh failed:", error);
+      }
+    }
+
+    document.getElementById("fitBtn").addEventListener("click", fitToScreen);
+    window.addEventListener("resize", () => {
+      svg.attr("viewBox", [0, 0, width(), height()]);
+      fitToScreen();
+    });
+
+    refreshState();
+    setInterval(refreshState, 1000);
+  </script>
+</body>
+</html>)HTML";
+        return html.str();
+    }
+
     // Returns the hash that should represent this ballot in the Merkle Tree.
     // Valid ballots → their SHA-256 ballot hash.
     // Invalidated ballots → the sentinel hash (so the tree stays consistent
@@ -86,12 +1055,110 @@ class VotingSystem {
         return b.valid ? b.to_hash() : MerkleTree::deleted_sentinel();
     }
 
+    std::string source_label_unlocked() const {
+        if (dataset_loaded_) {
+            return changed_after_dataset_load_
+                ? "Loaded dataset + CLI changes"
+                : "Loaded dataset";
+        }
+        return "Manual live session";
+    }
+
+    std::string source_detail_unlocked() const {
+        if (dataset_loaded_) {
+            return dataset_source_;
+        }
+        return "Built from actions in this currently running CLI session.";
+    }
+
+    std::string visualization_state_json_unlocked() const {
+        if (!tree_built_ || !tree_.is_built()) {
+            std::ostringstream empty;
+            empty << "{";
+            empty << "\"tree\":null,";
+            empty << "\"summary\":{"
+                  << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\","
+                  << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\","
+                  << "\"registeredVoters\":0,"
+                  << "\"ballotCount\":0,"
+                  << "\"validBallots\":0,"
+                  << "\"invalidBallots\":0,"
+                  << "\"candidates\":[]"
+                  << "}}";
+            return empty.str();
+        }
+
+        std::vector<std::string> voter_ids;
+        std::vector<std::string> candidates;
+        std::vector<std::string> receipt_ids;
+        std::vector<bool> tampered_flags;
+        std::unordered_map<std::string, int> tally;
+        std::unordered_map<std::string, int> tampered_tally;
+        int valid_ballots = 0;
+        int invalid_ballots = 0;
+
+        voter_ids.reserve(ballots_.size());
+        candidates.reserve(ballots_.size());
+        receipt_ids.reserve(ballots_.size());
+        tampered_flags.reserve(ballots_.size());
+
+        for (const auto& b : ballots_) {
+            voter_ids.push_back(b.voter_id);
+            candidates.push_back(b.valid ? b.candidate : "NULLIFIED");
+            receipt_ids.push_back(b.receipt_id);
+            tampered_flags.push_back(b.valid && b.tampered);
+            if (b.valid) {
+                ++valid_ballots;
+                ++tally[b.candidate];
+                if (b.tampered) ++tampered_tally[b.candidate];
+            } else {
+                ++invalid_ballots;
+            }
+        }
+
+        std::ostringstream summary;
+        summary << "{";
+        summary << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\",";
+        summary << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\",";
+        summary << "\"registeredVoters\":" << registry_.voter_count() << ",";
+        summary << "\"ballotCount\":" << ballots_.size() << ",";
+        summary << "\"validBallots\":" << valid_ballots << ",";
+        summary << "\"invalidBallots\":" << invalid_ballots << ",";
+        summary << "\"merkleRoot\":\"" << json_escape(tree_.get_root()) << "\",";
+        summary << "\"candidates\":[";
+        bool first = true;
+        for (const auto& kv : tally) {
+            if (!first) summary << ",";
+            first = false;
+            summary << "{"
+                    << "\"name\":\"" << json_escape(kv.first) << "\","
+                    << "\"votes\":" << kv.second << ","
+                    << "\"tamperedVotes\":" << tampered_tally[kv.first]
+                    << "}";
+        }
+        summary << "]}";
+
+        std::ostringstream out;
+        out << "{";
+        out << "\"tree\":" << tree_.export_visualization_json(
+            voter_ids, candidates, receipt_ids, tampered_flags) << ",";
+        out << "\"summary\":" << summary.str();
+        out << "}";
+        return out.str();
+    }
+
+    std::string visualization_state_json() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return visualization_state_json_unlocked();
+    }
+
 public:
 
     // ------------------------------------------------------------------
     // Register a voter  —  O(1) average (hash table insert)
     // ------------------------------------------------------------------
     bool register_voter(const std::string& voter_id) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         // ── Input validation ──────────────────────────────────────────
         if (voter_id.size() < 2) {
             std::cout << "  [!] Voter ID is too short (minimum 2 characters).\n";
@@ -131,6 +1198,8 @@ public:
         std::cout << "  |  Registry  : " << total << " voter(s) now registered\n";
         std::cout << "  +------------------------------------------------------------+\n";
         std::cout << "  [>] Next: use option 2 to cast a vote for this voter.\n";
+        if (dataset_loaded_)
+            changed_after_dataset_load_ = true;
         return true;
     }
 
@@ -151,6 +1220,7 @@ public:
     // ------------------------------------------------------------------
     std::string cast_vote(const std::string& voter_id,
                           const std::string& candidate) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (!registry_.is_registered(voter_id)) {
             std::cout << "  [!] '" << voter_id << "' is not registered.\n";
             return "";
@@ -193,6 +1263,9 @@ public:
             std::cout << "      [Tree not yet built -- use option 3 to build]\n";
         }
 
+        if (dataset_loaded_)
+            changed_after_dataset_load_ = true;
+
         return b.receipt_id;
     }
 
@@ -200,6 +1273,7 @@ public:
     // Build the global Merkle Tree from scratch  —  O(n)
     // ------------------------------------------------------------------
     void build_tree() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (ballots_.empty()) {
             std::cout << "  [!] No ballots to build a tree from.\n";
             return;
@@ -232,6 +1306,7 @@ public:
     // Load Dataset (Batch Registration and Voting)
     // ------------------------------------------------------------------
     void load_dataset(const std::string& filepath) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         std::ifstream file(filepath);
         if (!file.is_open()) {
             std::cout << "  [!] Failed to open dataset file: " << filepath << "\n";
@@ -277,6 +1352,9 @@ public:
         }
 
         tree_built_ = false;   // batch load: require explicit build_tree()
+        dataset_loaded_ = true;
+        dataset_source_ = filepath;
+        changed_after_dataset_load_ = false;
 
         std::cout << "  [+] Dataset loaded successfully!\n";
         std::cout << "      - Voters registered: " << registered_count << "\n";
@@ -293,6 +1371,7 @@ public:
     // (the tree holds the sentinel hash, not the original ballot hash).
     // ------------------------------------------------------------------
     void verify_vote(const std::string& receipt_id) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (!tree_built_) {
             std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
             return;
@@ -336,6 +1415,7 @@ public:
     // True iff Merkle proof for this receipt matches the published snapshot (no I/O).
     // For dry-run / tests: false after tamper_vote() until build_tree() refreshes snapshot.
     bool proof_matches_published_snapshot(const std::string& receipt_id) const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (!tree_built_) return false;
         int idx = registry_.get_ballot_index(receipt_id);
         if (idx < 0) return false;
@@ -349,6 +1429,7 @@ public:
     // ------------------------------------------------------------------
     void tamper_vote(const std::string& receipt_id,
                      const std::string& new_candidate) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         // ── Guards ────────────────────────────────────────────────────
         if (!tree_built_) {
             std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
@@ -407,6 +1488,9 @@ public:
         std::cout << "  |      Run option 5 (Verify vote) on this receipt to see\n";
         std::cout << "  |      the proof MISMATCH that exposes the tampering.\n";
         std::cout << "  +===========================================================+\n\n";
+
+        if (dataset_loaded_)
+            changed_after_dataset_load_ = true;
     }
 
     // ------------------------------------------------------------------
@@ -423,6 +1507,7 @@ public:
     //   • The vote tally excludes this ballot.
     // ------------------------------------------------------------------
     void invalidate_ballot(const std::string& receipt_id) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (!tree_built_) {
             std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
             return;
@@ -465,6 +1550,9 @@ public:
         std::cout << "  | [OK] Ballot invalidated. Root has changed.\n";
         std::cout << "  |      Verify vote to confirm (MISMATCH expected).\n";
         std::cout << "  +===========================================================+\n\n";
+
+        if (dataset_loaded_)
+            changed_after_dataset_load_ = true;
     }
 
     // ------------------------------------------------------------------
@@ -474,6 +1562,7 @@ public:
     // unmarks the voter so they can vote again.
     // ------------------------------------------------------------------
     void delete_ballot(const std::string& receipt_id) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (!tree_built_) {
             std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
             return;
@@ -517,12 +1606,16 @@ public:
         std::cout << "  +-----------------------------------------------------------+\n";
         std::cout << "  | [OK] Ballot deleted. The voter may now cast a new vote.\n";
         std::cout << "  +===========================================================+\n\n";
+
+        if (dataset_loaded_)
+            changed_after_dataset_load_ = true;
     }
 
     // ------------------------------------------------------------------
     // Display a summary of the current election state.
     // ------------------------------------------------------------------
     void display_summary() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         std::unordered_map<std::string, int> tally;
         int valid_count    = 0;
         int invalid_count  = 0;
@@ -568,11 +1661,63 @@ public:
     // Accessors / helpers for main.cpp
     // ------------------------------------------------------------------
 
-    void print_tree()     const { tree_.print_tree(); }
-    void print_registry() const { registry_.print_registry(); }
+    void print_tree() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        tree_.print_tree();
+    }
 
-    bool is_tree_built() const { return tree_built_; }
-    int  ballot_count()  const { return static_cast<int>(ballots_.size()); }
+    void print_registry() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        registry_.print_registry();
+    }
+
+    bool export_web_visualization(const std::string& output_path = "merkle_tree_vis.html") {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        (void)output_path;
+
+        if (!tree_built_) {
+            std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
+            return false;
+        }
+
+        try {
+            const std::string html = live_visualization_html_template();
+            if (!vis_server_.is_running()) {
+                std::cout << "  [*] Starting local visualization server...\n";
+                const bool started = vis_server_.start(
+                    html,
+                    [this]() { return this->visualization_state_json(); },
+                    8080);
+                if (!started) {
+                    std::cout << "  [!] Failed to start local visualization server.\n";
+                    return false;
+                }
+                std::cout << "  [+] Live server running at " << vis_server_.url() << "\n";
+            } else {
+                std::cout << "  [*] Live server already running at " << vis_server_.url() << "\n";
+            }
+
+            std::cout << "  [*] Opening in your default web browser...\n";
+            if (!open_in_browser(vis_server_.url())) {
+                std::cout << "  [!] Browser launch failed. Open this URL manually: "
+                          << vis_server_.url() << "\n";
+            }
+            return true;
+        } catch (const std::exception& ex) {
+            std::cout << "  [!] Visualization launch failed: " << ex.what() << "\n";
+            return false;
+        }
+    }
+
+    bool is_tree_built() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return tree_built_;
+    }
+
+    int ballot_count() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return static_cast<int>(ballots_.size());
+    }
 
     // Returns all receipt IDs with status tags for display in the menu.
     struct ReceiptInfo {
@@ -585,6 +1730,7 @@ public:
     };
 
     std::vector<ReceiptInfo> all_receipt_info() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         std::vector<ReceiptInfo> out;
         out.reserve(ballots_.size());
         for (const auto& b : ballots_)
@@ -594,6 +1740,7 @@ public:
     }
 
     bool receipt_info_for(const std::string& receipt_id, ReceiptInfo& out) const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         int idx = registry_.get_ballot_index(receipt_id);
         if (idx < 0) return false;
         const auto& b = ballots_[idx];
@@ -604,6 +1751,7 @@ public:
 
     // Plain receipt list (backward-compatible helper).
     std::vector<std::string> all_receipts() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         std::vector<std::string> out;
         out.reserve(ballots_.size());
         for (const auto& b : ballots_)
