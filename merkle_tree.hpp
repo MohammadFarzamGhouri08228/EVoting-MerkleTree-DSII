@@ -309,6 +309,29 @@ public:
         }
     }
 
+    // ------------------------------------------------------------------
+    // rollback()  —  O(k) to collect + O(k log k) rebuild where k = target
+    //
+    // Rebuild the tree from the first `new_leaf_count` leaves. This lets
+    // callers revert the tree to an earlier snapshot when tampering or an
+    // error is detected. Implementation extracts the prefix of leaf hashes,
+    // frees all nodes, then calls build() on the prefix.
+    // ------------------------------------------------------------------
+    void rollback(int new_leaf_count) {
+        if (new_leaf_count < 0) throw std::out_of_range("new_leaf_count negative");
+        if (new_leaf_count > static_cast<int>(leaves_.size()))
+            throw std::out_of_range("new_leaf_count exceeds current leaf count");
+        if (new_leaf_count == static_cast<int>(leaves_.size())) return;
+
+        std::vector<std::string> hashes;
+        hashes.reserve(new_leaf_count);
+        for (int i = 0; i < new_leaf_count; ++i)
+            hashes.push_back(leaves_[i]->hash);
+
+        free_all();
+        if (!hashes.empty()) build(hashes);
+    }
+
     std::vector<std::pair<std::string, std::string>> generate_proof(int leaf_index) const {
         if (!root_)
             throw std::logic_error("Tree has not been built yet.");

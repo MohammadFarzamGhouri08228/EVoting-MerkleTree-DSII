@@ -99,6 +99,15 @@ class MerkleMMR {
     // All allocated nodes — only used by the destructor.
     std::vector<MMRNode*> all_nodes_;
 
+    // Snapshots taken at intervals for rollback/audit
+    struct Snapshot {
+        size_t leaf_count = 0;
+        std::vector<std::string> leaf_hashes;
+        std::string root;
+    };
+
+    std::vector<Snapshot> snapshots_;
+
     // ------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------
@@ -252,6 +261,68 @@ public:
         }
 
         return proof;
+    }
+
+    // ------------------------------------------------------------------
+    // rollback()  —  O(k + m*log m) where k = target leaf count, m = k
+    //
+    // Revert the MMR to contain only the first `new_leaf_count` appended
+    // leaves. This is implemented by extracting the first `new_leaf_count`
+    // leaf hashes, freeing all nodes, and re-appending those hashes. This
+    // is simple and safe (no pointer bookkeeping) and acceptable for
+    // recovery/tamper rollback scenarios.
+    // ------------------------------------------------------------------
+    void rollback(size_t new_leaf_count) {
+        if (new_leaf_count > n_)
+            throw std::out_of_range("new_leaf_count exceeds current leaf count");
+        if (new_leaf_count == n_) return;
+
+        // collect prefixes of leaf hashes
+        std::vector<std::string> hashes;
+        hashes.reserve(new_leaf_count);
+        for (size_t i = 0; i < new_leaf_count; ++i)
+            hashes.push_back(leaves_[i]->hash);
+
+        // destroy current structure and rebuild from the prefix
+        free_all();
+        for (const auto& h : hashes) append(h);
+    }
+
+    // ------------------------------------------------------------------
+    // snapshot() / rollback_to_snapshot()
+    //
+    // Take a full snapshot of the current MMR (leaf count + prefix of
+    // leaf hashes + root). Snapshots are stored in-memory in `snapshots_`.
+    // rollback_to_snapshot(index) restores the MMR to the exact state at
+    // snapshot `index` by rebuilding from the saved leaf-hash prefix.
+    // ------------------------------------------------------------------
+    void take_snapshot() {
+        Snapshot s;
+        s.leaf_count = n_;
+        s.root = get_root();
+        s.leaf_hashes.reserve(n_);
+        for (size_t i = 0; i < n_; ++i) s.leaf_hashes.push_back(leaves_[i]->hash);
+        snapshots_.push_back(std::move(s));
+    }
+
+    size_t snapshot_count() const { return snapshots_.size(); }
+
+    bool is_tampered_since_snapshot(size_t snapshot_index) const {
+        if (snapshot_index >= snapshots_.size())
+            throw std::out_of_range("snapshot_index out of range");
+        const Snapshot& s = snapshots_[snapshot_index];
+        if (s.leaf_count != n_) return true;
+        return get_root() != s.root;
+    }
+
+    void rollback_to_snapshot(size_t snapshot_index) {
+        if (snapshot_index >= snapshots_.size())
+            throw std::out_of_range("snapshot_index out of range");
+        const Snapshot& s = snapshots_[snapshot_index];
+
+        // Rebuild exactly from the saved hashes
+        free_all();
+        for (const auto& h : s.leaf_hashes) append(h);
     }
 
     // ------------------------------------------------------------------
