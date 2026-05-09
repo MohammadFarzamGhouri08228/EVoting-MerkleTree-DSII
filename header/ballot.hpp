@@ -13,7 +13,7 @@
 // =============================================================================
 #include <string>
 #include <sstream>
-#include "sha256.hpp"
+#include "header/sha256.hpp"
 
 struct Ballot {
     std::string receipt_id;   // unique ID given to voter after casting
@@ -30,29 +30,15 @@ struct Ballot {
     // Canonical string: all fields joined by '|' delimiter.
     // This is what gets hashed. The delimiter prevents field-boundary collisions.
     // -------------------------------------------------------------------------
-    std::string to_canonical() const {
-        return receipt_id + "|" + voter_id + "|" + candidate + "|" + salt + "|" + timestamp;
-    }
+    std::string to_canonical() const;
 
     // -------------------------------------------------------------------------
     // SHA-256 hash of the canonical string.
     // This 64-character hex string becomes a LEAF NODE in the Merkle Tree.
     // Time complexity: O(L) where L = length of canonical string
     // -------------------------------------------------------------------------
-    std::string to_hash() const {
-        return sha256(to_canonical());
-    }
+    std::string to_hash() const;
 
     // Human-readable one-line summary for display in the CLI.
-    std::string to_display() const {
-        std::string s = "[" + receipt_id + "] voter=" + voter_id + "  ";
-        if (tampered && !pre_tamper_candidate.empty())
-            s += "vote: " + pre_tamper_candidate + " -> " + candidate + "  ";
-        else
-            s += "candidate=" + candidate + "  ";
-        s += "ts=" + timestamp;
-        if (!valid)   s += "  [INVALIDATED]";
-        if (tampered) s += "  [*** TAMPERED ***]";
-        return s;
-    }
+    std::string to_display() const;
 };

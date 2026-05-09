@@ -3,9 +3,9 @@
 #include <string>
 #include <cassert>
 #include <sstream>
-#include "../merkle_tree.hpp"
-#include "../voting_system.hpp"
-#include "../merkle_mountain_range.hpp"
+#include "../header/merkle_tree.hpp"
+#include "../header/voting_system.hpp"
+#include "../header/merkle_mountain_range.hpp"
 
 // Forward declaration for newly added test
 void test_mmr_snapshot_and_rollback();

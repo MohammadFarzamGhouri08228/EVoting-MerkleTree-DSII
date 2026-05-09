@@ -1,13 +1,6 @@
 #pragma once
 // =============================================================================
 // sha256.hpp  —  Self-contained SHA-256 implementation
-// No external libraries required.
-//
-// Usage:
-//   std::string hash = sha256("hello world");
-//
-// Time complexity:  O(n)  where n = input length in bytes
-//                   (each 64-byte block is processed in O(1) — 64 fixed rounds)
 // =============================================================================
 #include <string>
 #include <sstream>
@@ -17,10 +10,6 @@
 
 inline std::string sha256(const std::string& input) {
 
-    // -------------------------------------------------------------------------
-    // Round constants K[0..63]:
-    // First 32 bits of the fractional parts of the cube roots of the first 64 primes.
-    // -------------------------------------------------------------------------
     static const uint32_t K[64] = {
         0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
         0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
@@ -40,26 +29,15 @@ inline std::string sha256(const std::string& input) {
         0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
     };
 
-    // -------------------------------------------------------------------------
-    // Initial hash values H[0..7]:
-    // First 32 bits of the fractional parts of the square roots of the first 8 primes.
-    // -------------------------------------------------------------------------
     uint32_t H[8] = {
         0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
         0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u
     };
 
-    // Right-rotate a 32-bit integer by n positions
     auto rotr = [](uint32_t x, uint32_t n) -> uint32_t {
         return (x >> n) | (x << (32u - n));
     };
 
-    // -------------------------------------------------------------------------
-    // Pre-processing: pad the message to a multiple of 512 bits (64 bytes)
-    //   1. Append a single '1' bit  (0x80 byte)
-    //   2. Append zeros until length ≡ 448 (mod 512) bits, i.e. 56 mod 64 bytes
-    //   3. Append original message length as a 64-bit big-endian integer
-    // -------------------------------------------------------------------------
     std::vector<uint8_t> msg(input.begin(), input.end());
     uint64_t bit_len = static_cast<uint64_t>(input.size()) * 8u;
 
@@ -69,12 +47,7 @@ inline std::string sha256(const std::string& input) {
     for (int i = 7; i >= 0; --i)
         msg.push_back(static_cast<uint8_t>((bit_len >> (i * 8)) & 0xffu));
 
-    // -------------------------------------------------------------------------
-    // Process each 512-bit (64-byte) block
-    // -------------------------------------------------------------------------
     for (size_t bi = 0; bi < msg.size(); bi += 64) {
-
-        // Build 64-word message schedule
         uint32_t W[64];
         for (int i = 0; i < 16; ++i)
             W[i] = (uint32_t(msg[bi + i*4    ]) << 24) |
@@ -87,11 +60,9 @@ inline std::string sha256(const std::string& input) {
             W[i] = W[i-16] + s0 + W[i-7] + s1;
         }
 
-        // Initialise working variables from current hash values
         uint32_t a=H[0], b=H[1], c=H[2], d=H[3],
                  e=H[4], f=H[5], g=H[6], hh=H[7];
 
-        // 64 compression rounds
         for (int i = 0; i < 64; ++i) {
             uint32_t S1    = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
             uint32_t ch    = (e & f) ^ (~e & g);
@@ -104,14 +75,10 @@ inline std::string sha256(const std::string& input) {
             d  = c;  c = b;  b = a;  a = temp1 + temp2;
         }
 
-        // Add compressed chunk to current hash values
         H[0]+=a; H[1]+=b; H[2]+=c; H[3]+=d;
         H[4]+=e; H[5]+=f; H[6]+=g; H[7]+=hh;
     }
 
-    // -------------------------------------------------------------------------
-    // Produce the final 256-bit (64 hex character) digest
-    // -------------------------------------------------------------------------
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
     for (int i = 0; i < 8; ++i)
