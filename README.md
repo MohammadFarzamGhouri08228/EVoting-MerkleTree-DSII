@@ -54,6 +54,7 @@ This demonstrates two fundamental data structures working together:
 - Merkle proof verification (step-by-step root recomputation)
 - Tampering simulation — modify a ballot, show root change, show proof failure
 - Terminal visualization of tree levels and proof path
+- Live local web visualization served from the C++ backend on `localhost`
 - Full CLI menu
 
 ---
@@ -93,6 +94,14 @@ EVoting-MerkleTree-DSII/
 ### Compile
 
 ```bash
+g++ -std=c++17 -O2 -o evoteverify main.cpp -lws2_32
+```
+
+Windows note:
+If you are using MinGW/MSYS2, `-lws2_32` is required because the live visualization starts a lightweight local HTTP server and uses the Windows socket library.
+
+Linux / macOS:
+```bash
 g++ -std=c++17 -O2 -o evoteverify main.cpp
 ```
 
@@ -107,6 +116,29 @@ cl /std:c++17 /EHsc /O2 /Fe:evoteverify.exe main.cpp
 ./evoteverify        # Linux / macOS
 evoteverify.exe      # Windows
 ```
+
+### Live Visualization
+
+The interactive tree visualization is now live, not just a static HTML export.
+
+How to use it:
+
+1. Run the CLI program
+2. Load the sample dataset with option `13`, or register/cast votes manually
+3. Build the tree with option `3`
+4. Open the live visualization with option `5`
+
+What happens:
+
+- The C++ backend starts a lightweight local web server on `http://127.0.0.1:8080/`
+- Your browser opens that local page
+- The page polls `/api/state` every second
+- Any further CLI changes appear in the browser automatically while the CLI is still running
+
+Important:
+
+- If the compile fails with errors like `undefined reference to __imp_socket`, you likely forgot `-lws2_32` on Windows
+- The browser view only stays live while the CLI process is still running
 
 ### Run Automated Presentation Demo
 
