@@ -28,6 +28,14 @@ void VoterRegistry::store_receipt_impl(const std::string& receipt_id, int ballot
     receipt_map_[receipt_id] = ballot_index;
 }
 
+void VoterRegistry::remove_receipt_impl(const std::string& receipt_id) {
+    receipt_map_.erase(receipt_id);
+}
+
+void VoterRegistry::clear_receipts_impl() {
+    receipt_map_.clear();
+}
+
 int VoterRegistry::get_ballot_index_impl(const std::string& receipt_id) const {
     auto it = receipt_map_.find(receipt_id);
     if (it == receipt_map_.end()) return -1;

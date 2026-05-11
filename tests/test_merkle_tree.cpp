@@ -91,6 +91,27 @@ static std::vector<std::string> make_test_leaves(int count) {
     return leaves;
 }
 
+static std::string rebuild_root_from_voting_system(const VotingSystem& vs) {
+    MerkleTree rebuilt;
+    rebuilt.build(vs.current_ballot_hashes());
+    return rebuilt.get_root();
+}
+
+static std::vector<std::string> seed_votes(
+    VotingSystem& vs,
+    int count,
+    const std::vector<std::string>& candidates = {"A", "B", "A", "C", "B", "A", "C", "B"})
+{
+    std::vector<std::string> receipts;
+    receipts.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const std::string voter = "V" + std::to_string(i + 1);
+        vs.register_voter(voter);
+        receipts.push_back(vs.cast_vote(voter, candidates[i % candidates.size()]));
+    }
+    return receipts;
+}
+
 // 1. Build: Root hash is correctly computed for both even and odd leaf counts
 void test_build_even_and_odd() {
     MerkleTree tree_even;
@@ -318,15 +339,136 @@ void test_tamper_flags_clear_after_invalidate_and_delete() {
     VotingSystem::ReceiptInfo info1{};
     VotingSystem::ReceiptInfo info2{};
     ASSERT_TRUE(vs.receipt_info_for(r1, info1));
-    ASSERT_TRUE(vs.receipt_info_for(r2, info2));
+    ASSERT_FALSE(vs.receipt_info_for(r2, info2));
 
     ASSERT_FALSE(info1.valid);
     ASSERT_FALSE(info1.tampered);
     ASSERT_EQ(info1.pre_tamper_candidate, "");
+    ASSERT_EQ(vs.ballot_count(), 1);
+}
 
-    ASSERT_FALSE(info2.valid);
-    ASSERT_FALSE(info2.tampered);
-    ASSERT_EQ(info2.pre_tamper_candidate, "");
+void test_delete_empty_tree_is_noop() {
+    SuppressOutput so;
+    VotingSystem vs;
+    vs.delete_ballot("missing");
+    ASSERT_EQ(vs.ballot_count(), 0);
+    ASSERT_EQ(vs.merkle_root(), "");
+}
+
+void test_delete_only_leaf_clears_tree() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 1);
+    vs.build_tree();
+
+    vs.delete_ballot(receipts[0]);
+
+    ASSERT_EQ(vs.ballot_count(), 0);
+    ASSERT_FALSE(vs.is_tree_built());
+    ASSERT_EQ(vs.merkle_root(), "");
+    ASSERT_EQ(rebuild_root_from_voting_system(vs), "");
+}
+
+void test_delete_first_leaf_rebuilds_correctly() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 4);
+    vs.build_tree();
+
+    vs.delete_ballot(receipts[0]);
+
+    ASSERT_EQ(vs.ballot_count(), 3);
+    ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+    VotingSystem::ReceiptInfo info{};
+    ASSERT_FALSE(vs.receipt_info_for(receipts[0], info));
+}
+
+void test_delete_middle_leaf_rebuilds_correctly() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 4);
+    vs.build_tree();
+
+    vs.delete_ballot(receipts[1]);
+
+    ASSERT_EQ(vs.ballot_count(), 3);
+    ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+}
+
+void test_delete_last_leaf_removes_old_duplicate_path() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 5);
+    vs.build_tree();
+
+    vs.delete_ballot(receipts[4]);
+
+    ASSERT_EQ(vs.ballot_count(), 4);
+    ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+}
+
+void test_delete_even_to_odd_rebuilds_correctly() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 4);
+    vs.build_tree();
+
+    vs.delete_ballot(receipts[2]);
+
+    ASSERT_EQ(vs.ballot_count(), 3);
+    ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+}
+
+void test_delete_non_existing_receipt_does_not_corrupt_tree() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 3);
+    vs.build_tree();
+    const std::string old_root = vs.merkle_root();
+
+    vs.delete_ballot("RCP-does-not-exist");
+
+    ASSERT_EQ(vs.ballot_count(), 3);
+    ASSERT_EQ(vs.merkle_root(), old_root);
+}
+
+void test_delete_by_receipt_is_safe_for_duplicate_values() {
+    SuppressOutput so;
+    VotingSystem vs;
+    vs.register_voter("V1");
+    vs.register_voter("V2");
+    vs.register_voter("V3");
+    vs.register_voter("V4");
+    std::string r1 = vs.cast_vote("V1", "A");
+    std::string r2 = vs.cast_vote("V2", "B");
+    std::string r3 = vs.cast_vote("V3", "A");
+    std::string r4 = vs.cast_vote("V4", "C");
+    vs.build_tree();
+
+    vs.delete_ballot(r1);
+
+    VotingSystem::ReceiptInfo info{};
+    ASSERT_FALSE(vs.receipt_info_for(r1, info));
+    ASSERT_TRUE(vs.receipt_info_for(r3, info));
+    ASSERT_EQ(info.candidate, "A");
+    ASSERT_EQ(vs.ballot_count(), 3);
+    ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+}
+
+void test_repeated_deletions_until_empty_keep_roots_correct() {
+    SuppressOutput so;
+    VotingSystem vs;
+    auto receipts = seed_votes(vs, 8);
+    vs.build_tree();
+
+    for (const auto& receipt : receipts) {
+        vs.delete_ballot(receipt);
+        ASSERT_EQ(vs.merkle_root(), rebuild_root_from_voting_system(vs));
+    }
+
+    ASSERT_EQ(vs.ballot_count(), 0);
+    ASSERT_EQ(vs.merkle_root(), "");
+    ASSERT_FALSE(vs.is_tree_built());
 }
 
 // Integration tests with VotingSystem
@@ -381,6 +523,15 @@ int main() {
     RUN_TEST(test_voting_tamper_proof_snapshot);
     RUN_TEST(test_voting_tamper_marker_and_original_vote_tracking);
     RUN_TEST(test_tamper_flags_clear_after_invalidate_and_delete);
+    RUN_TEST(test_delete_empty_tree_is_noop);
+    RUN_TEST(test_delete_only_leaf_clears_tree);
+    RUN_TEST(test_delete_first_leaf_rebuilds_correctly);
+    RUN_TEST(test_delete_middle_leaf_rebuilds_correctly);
+    RUN_TEST(test_delete_last_leaf_removes_old_duplicate_path);
+    RUN_TEST(test_delete_even_to_odd_rebuilds_correctly);
+    RUN_TEST(test_delete_non_existing_receipt_does_not_corrupt_tree);
+    RUN_TEST(test_delete_by_receipt_is_safe_for_duplicate_values);
+    RUN_TEST(test_repeated_deletions_until_empty_keep_roots_correct);
     RUN_TEST(test_mmr_snapshot_and_rollback);
     RUN_TEST(test_voting_system_integration);
 

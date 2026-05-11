@@ -2362,6 +2362,30 @@ class VotingSystem {
         return "Built from actions in this currently running CLI session.";
     }
 
+    void rebuild_receipt_index_unlocked() {
+        registry_.clear_receipts();
+        for (size_t i = 0; i < ballots_.size(); ++i)
+            registry_.store_receipt(ballots_[i].receipt_id, static_cast<int>(i));
+    }
+
+    void rebuild_tree_from_ballots_unlocked() {
+        if (ballots_.empty()) {
+            tree_.build({});
+            last_built_root_.clear();
+            tree_built_ = false;
+            return;
+        }
+
+        std::vector<std::string> leaves;
+        leaves.reserve(ballots_.size());
+        for (const auto& b : ballots_)
+            leaves.push_back(ballot_leaf_hash(b));
+
+        tree_.build(leaves);
+        last_built_root_ = tree_.get_root();
+        tree_built_ = true;
+    }
+
     std::string build_visualization_state_for_prefix_unlocked(
         size_t leaf_count,
         const std::string& step_label) const
@@ -2976,10 +3000,6 @@ public:
     // ------------------------------------------------------------------
     void verify_vote(const std::string& receipt_id) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (!tree_built_) {
-            std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
-            return;
-        }
         int idx = registry_.get_ballot_index(receipt_id);
         if (idx < 0) {
             std::cout << "  [!] Receipt ID not found: " << receipt_id << "\n";
@@ -3112,10 +3132,6 @@ public:
     // ------------------------------------------------------------------
     void invalidate_ballot(const std::string& receipt_id) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (!tree_built_) {
-            std::cout << "  [!] Build the Merkle Tree first (option 3).\n";
-            return;
-        }
         int idx = registry_.get_ballot_index(receipt_id);
         if (idx < 0) {
             std::cout << "  [!] Receipt ID not found: " << receipt_id << "\n";
@@ -3126,7 +3142,9 @@ public:
             return;
         }
 
-        std::string old_root = tree_.get_root();
+        const bool had_tree = tree_built_;
+        const Ballot removed = ballots_[idx];
+        const std::string old_root = tree_.get_root();
 
         std::cout << "\n";
         std::cout << "  +====== BALLOT INVALIDATION ================================+\n";
@@ -3160,10 +3178,11 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // Delete a ballot  --  O(log n) via tree_.delete_leaf()
+    // Delete a ballot from the real ballot list, then rebuild the tree.
     //
-    // Similar to invalidate_ballot, but completely removes the vote AND
-    // unmarks the voter so they can vote again.
+    // Unlike invalidation, deletion removes the Ballot record entirely so the
+    // remaining leaves shift left and the Merkle Tree is recalculated from the
+    // updated real data list only.
     // ------------------------------------------------------------------
     void delete_ballot(const std::string& receipt_id) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -3181,34 +3200,39 @@ public:
             return;
         }
 
-        std::string old_root = tree_.get_root();
+        const bool had_tree = tree_built_;
+        const Ballot removed = ballots_[idx];
+        const std::string old_root = tree_.get_root();
 
         std::cout << "\n";
         std::cout << "  +====== BALLOT DELETION ====================================+\n";
         std::cout << "  | Receipt   : " << receipt_id                               << "\n";
-        std::cout << "  | Voter     : " << ballots_[idx].voter_id                   << "\n";
-        std::cout << "  | Candidate : " << ballots_[idx].candidate                  << "\n";
-        std::cout << "  | Leaf hash : " << short_h(ballots_[idx].to_hash())         << "\n";
+        std::cout << "  | Voter     : " << removed.voter_id                         << "\n";
+        std::cout << "  | Candidate : " << removed.candidate                        << "\n";
+        std::cout << "  | Leaf hash : " << short_h(removed.to_hash())               << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
         std::cout << "  | 1. Freeing voter to vote again...\n";
-        
-        registry_.unmark_voted(ballots_[idx].voter_id);
-        ballots_[idx].valid     = false;
-        ballots_[idx].tampered  = false;
-        ballots_[idx].pre_tamper_candidate.clear();
+        registry_.unmark_voted(removed.voter_id);
 
-        std::cout << "  | 2. Nullifying leaf and updating tree via parent ptrs...\n";
+        std::cout << "  | 2. Removing ballot from the real leaf list...\n";
+        registry_.remove_receipt(receipt_id);
+        ballots_.erase(ballots_.begin() + idx);
+        rebuild_receipt_index_unlocked();
 
-        // O(log n): sets sentinel hash on leaf node, walks up via parent pointers
-        tree_.delete_leaf(idx);
+        std::cout << "  | 3. Rebuilding the Merkle Tree from remaining ballots...\n";
+        if (had_tree) {
+            queue_build_animation_unlocked(ballots_.size(), "delete_rebuild");
+            rebuild_tree_from_ballots_unlocked();
+        } else {
+            last_built_root_.clear();
+            tree_built_ = false;
+        }
 
-        last_built_root_ = tree_.get_root();   // root has changed — update snapshot
-
-        std::cout << "  | Sentinel  : " << short_h(MerkleTree::deleted_sentinel()) << "\n";
         std::cout << "  | Old root  : " << old_root                                << "\n";
         std::cout << "  | New root  : " << last_built_root_                        << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
-        std::cout << "  | [OK] Ballot deleted. The voter may now cast a new vote.\n";
+        std::cout << "  | [OK] Ballot deleted from the real data list.\n";
+        std::cout << "  |      The voter may now cast a new vote.\n";
         std::cout << "  +===========================================================+\n\n";
 
         if (dataset_loaded_)
@@ -3326,6 +3350,20 @@ public:
     int ballot_count() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
         return static_cast<int>(ballots_.size());
+    }
+
+    std::string merkle_root() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return tree_built_ ? tree_.get_root() : "";
+    }
+
+    std::vector<std::string> current_ballot_hashes() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::vector<std::string> out;
+        out.reserve(ballots_.size());
+        for (const auto& b : ballots_)
+            out.push_back(ballot_leaf_hash(b));
+        return out;
     }
 
     // Returns all receipt IDs with status tags for display in the menu.
