@@ -37,6 +37,14 @@ int VoterRegistry::get_ballot_index_impl(const std::string& receipt_id) const {
 int VoterRegistry::voter_count() const { return static_cast<int>(voters_.size()); }
 int VoterRegistry::receipt_count() const { return static_cast<int>(receipt_map_.size()); }
 
+std::vector<std::pair<std::string, bool>> VoterRegistry::entries() const {
+    std::vector<std::pair<std::string, bool>> out;
+    out.reserve(voters_.size());
+    for (const auto& kv : voters_)
+        out.push_back(kv);
+    return out;
+}
+
 void VoterRegistry::print_registry() const {
     std::cout << "\n  Voter Registry  (" << voter_count() << " registered)\n";
     std::cout << "  " << std::string(44, '-') << "\n";

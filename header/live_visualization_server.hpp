@@ -19,12 +19,14 @@ static const Socket invalid_socket = -1;
 class LiveVisualizationServer {
 public:
     using StateProvider = std::function<std::string()>;
+    using ActionHandler = std::function<std::string(const std::string&)>;
 
     LiveVisualizationServer() = default;
     ~LiveVisualizationServer() { stop(); }
 
     bool start(const std::string& merkle_page_html,
                StateProvider state_provider,
+               ActionHandler action_handler = nullptr,
                const std::string& launcher_page_html = "",
                const std::string& mmr_page_html = "",
                int preferred_port = 8080);
@@ -41,6 +43,7 @@ private:
     std::string launcher_page_html_;
     std::string mmr_page_html_;
     StateProvider state_provider_ = nullptr;
+    ActionHandler action_handler_ = nullptr;
 
     static bool init_sockets();
     static void close_socket(Socket s);

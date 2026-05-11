@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <memory>
 #include <mutex>
+#include <cctype>
 #include "header/ballot.hpp"
 #include "header/voter_registry.hpp"
 #include "header/merkle_tree.hpp"
@@ -112,6 +113,53 @@ class VotingSystem {
         return out.str();
     }
 
+    static std::string url_decode(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] == '%' && i + 2 < s.size()) {
+                int value = 0;
+                std::istringstream iss(s.substr(i + 1, 2));
+                if (iss >> std::hex >> value) {
+                    out += static_cast<char>(value);
+                    i += 2;
+                    continue;
+                }
+            }
+            if (s[i] == '+') {
+                out += ' ';
+                continue;
+            }
+            out += s[i];
+        }
+        return out;
+    }
+
+    static std::string query_param(const std::string& path, const std::string& key) {
+        const std::string marker = key + "=";
+        const size_t query_pos = path.find('?');
+        if (query_pos == std::string::npos) return "";
+        size_t pos = path.find(marker, query_pos + 1);
+        if (pos == std::string::npos) return "";
+        pos += marker.size();
+        size_t end = path.find('&', pos);
+        return url_decode(path.substr(pos, end == std::string::npos ? std::string::npos : end - pos));
+    }
+
+    template <typename Fn>
+    static std::string capture_stdout(Fn&& fn) {
+        std::ostringstream buffer;
+        std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
+        try {
+            fn();
+            std::cout.rdbuf(old);
+        } catch (...) {
+            std::cout.rdbuf(old);
+            throw;
+        }
+        return buffer.str();
+    }
+
     static bool open_in_browser(const std::string& filepath) {
 #ifdef _WIN32
         std::string command = "start \"\" \"" + filepath + "\"";
@@ -136,59 +184,143 @@ class VotingSystem {
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <style>
     :root {
-      --bg: #f6f3ea;
-      --panel: rgba(255, 252, 245, 0.9);
-      --ink: #132a2f;
-      --muted: #5b6c70;
-      --edge: #a8b6b2;
-      --root: #d9a404;
-      --internal: #7ca6b1;
-      --leaf: #2d8f5a;
-      --deleted: #c84b3f;
-      --tampered: #f28c28;
+      --bg: #f4efe3;
+      --panel: rgba(255, 251, 245, 0.86);
+      --panel-strong: rgba(255, 255, 255, 0.74);
+      --ink: #17343b;
+      --muted: #61767a;
+      --edge: #b1c0bb;
+      --root: #d39a1f;
+      --internal: #6e96a3;
+      --leaf: #2a8a61;
+      --deleted: #c65b4e;
+      --tampered: #d9852d;
+      --shadow: 0 24px 60px rgba(23, 52, 59, 0.10);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, #fff4cd 0%, transparent 28%),
-        radial-gradient(circle at top right, #dceef0 0%, transparent 24%),
-        linear-gradient(180deg, #f3efe4 0%, #eef4f3 100%);
+        radial-gradient(circle at top left, #fff2c6 0%, transparent 26%),
+        radial-gradient(circle at top right, #d8ecef 0%, transparent 24%),
+        linear-gradient(180deg, #f5efe3 0%, #edf5f2 100%);
       min-height: 100vh;
     }
     .shell {
       display: grid;
-      grid-template-columns: minmax(260px, 320px) 1fr;
-      gap: 18px;
-      padding: 18px;
+      grid-template-columns: minmax(360px, 440px) 1fr;
+      gap: 22px;
+      padding: 22px;
+      max-width: 1680px;
+      margin: 0 auto;
       min-height: 100vh;
     }
     .panel {
       background: var(--panel);
-      border: 1px solid rgba(19, 42, 47, 0.08);
-      border-radius: 18px;
-      box-shadow: 0 18px 45px rgba(19, 42, 47, 0.08);
-      backdrop-filter: blur(10px);
+      border: 1px solid rgba(23, 52, 59, 0.08);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
     }
     .sidebar {
-      padding: 20px;
+      padding: 22px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 18px;
       overflow-y: auto;
     }
     h1, h2, p { margin: 0; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-    .stat {
-      display: grid;
-      grid-template-columns: 1fr auto;
+    h1 {
+      font-size: 2rem;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+    h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+    .hero-card {
+      padding: 22px;
+      border-radius: 24px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.66), rgba(255,247,229,0.82)),
+        linear-gradient(160deg, rgba(211,154,31,0.08), rgba(42,138,97,0.06));
+      border: 1px solid rgba(23, 52, 59, 0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+    }
+    .hero-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
-      font-size: 0.95rem;
+      margin-bottom: 14px;
+    }
+    .hero-copy {
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.96rem;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(23, 52, 59, 0.08);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .section-card {
+      border-radius: 22px;
+      padding: 18px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(23, 52, 59, 0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .section-note {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(23, 52, 59, 0.08);
+    }
+    .stat-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+    .stat-sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.82rem;
     }
     .legend-item {
       display: flex;
@@ -200,16 +332,85 @@ class VotingSystem {
     }
     .helper-copy {
       color: var(--muted);
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       line-height: 1.5;
-      padding: 12px 14px;
-      background: rgba(19, 42, 47, 0.04);
-      border-radius: 14px;
+      padding: 14px 16px;
+      background: rgba(23, 52, 59, 0.045);
+      border-radius: 18px;
     }
     .candidate-list {
       display: flex;
       flex-direction: column;
+      gap: 12px;
+    }
+    .action-form {
+      display: flex;
+      flex-direction: column;
       gap: 10px;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .action-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid rgba(19, 42, 47, 0.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.9);
+      color: var(--ink);
+      font: inherit;
+    }
+    .field textarea {
+      min-height: 120px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.83rem;
+    }
+    .action-btn.alt { background: #2d8f5a; }
+    .action-btn.warn { background: #c84b3f; }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .data-table th, .data-table td {
+      text-align: left;
+      padding: 8px 6px;
+      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
+      vertical-align: top;
+    }
+    .data-table th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      background: rgba(19, 42, 47, 0.08);
     }
     .candidate-row {
       display: grid;
@@ -217,29 +418,32 @@ class VotingSystem {
       gap: 10px;
       align-items: center;
       padding: 10px 12px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.62);
-      border: 1px solid rgba(19, 42, 47, 0.08);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(23, 52, 59, 0.08);
+      padding: 14px 16px;
     }
     .candidate-row strong {
       display: block;
-      font-size: 0.96rem;
+      font-size: 1rem;
     }
     .candidate-row span {
       color: var(--muted);
-      font-size: 0.85rem;
+      font-size: 0.86rem;
     }
     .badge {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 34px;
-      padding: 6px 10px;
+      min-width: 46px;
+      min-height: 46px;
+      padding: 6px 12px;
       border-radius: 999px;
-      background: #17343b;
+      background: linear-gradient(135deg, #183840, #204851);
       color: white;
-      font-weight: 600;
-      font-size: 0.88rem;
+      font-weight: 700;
+      font-size: 1rem;
+      box-shadow: 0 10px 24px rgba(23, 52, 59, 0.14);
     }
     .swatch {
       width: 14px;
@@ -252,6 +456,22 @@ class VotingSystem {
       position: relative;
       overflow: hidden;
       min-height: 78vh;
+      background:
+        radial-gradient(circle at 8% 10%, rgba(211,154,31,0.08), transparent 18%),
+        radial-gradient(circle at 100% 0%, rgba(42,138,97,0.10), transparent 22%),
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(247,251,249,0.82));
+    }
+    .workspace::before {
+      content: "Tree Canvas";
+      position: absolute;
+      left: 22px;
+      top: 20px;
+      z-index: 2;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-weight: 700;
     }
     #chart {
       width: 100%;
@@ -296,8 +516,8 @@ class VotingSystem {
     .tooltip strong { color: #ffe28a; }
     .toolbar {
       position: absolute;
-      right: 16px;
-      top: 16px;
+      right: 18px;
+      top: 18px;
       display: flex;
       gap: 10px;
       z-index: 3;
@@ -305,17 +525,106 @@ class VotingSystem {
     button {
       border: 0;
       border-radius: 999px;
-      background: #17343b;
+      background: linear-gradient(135deg, #183840, #204851);
       color: white;
-      padding: 10px 14px;
+      padding: 11px 16px;
       font-size: 0.9rem;
+      font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 8px 20px rgba(19, 42, 47, 0.16);
+      box-shadow: 0 10px 24px rgba(23, 52, 59, 0.14);
     }
-    button:hover { background: #20454d; }
+    button:hover { transform: translateY(-1px); filter: brightness(1.04); }
+    .action-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .field label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid rgba(23, 52, 59, 0.12);
+      border-radius: 16px;
+      padding: 11px 13px;
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+      font: inherit;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    }
+    .field textarea {
+      min-height: 140px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .action-btn {
+      width: 100%;
+    }
+    .action-btn.alt {
+      background: linear-gradient(135deg, #2a8a61, #3ca476);
+    }
+    .action-btn.warn {
+      background: linear-gradient(135deg, #c65b4e, #db786b);
+    }
+    .table-shell {
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(23, 52, 59, 0.08);
+      background: rgba(255,255,255,0.72);
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    .data-table th, .data-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(23, 52, 59, 0.07);
+      vertical-align: top;
+    }
+    .data-table th {
+      color: var(--muted);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      background: rgba(23, 52, 59, 0.04);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      background: rgba(23, 52, 59, 0.08);
+      white-space: nowrap;
+    }
     @media (max-width: 960px) {
       .shell { grid-template-columns: 1fr; }
       .workspace, #chart { min-height: 68vh; }
+      .action-grid, .action-row, .stats-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1014,39 +1323,173 @@ class VotingSystem {
 <body>
   <div class="shell">
     <aside class="panel sidebar">
-      <div>
-        <h2>Interactive View</h2>
-        <h1>Merkle Tree Structure</h1>
-        <p style="margin-top:8px;color:var(--muted);">This page stays connected to the running C++ CLI. Register voters, cast votes, build the tree, or invalidate ballots there, and this view refreshes automatically.</p>
+      <div class="hero-card">
+        <div class="hero-top">
+          <div>
+            <h2>Voting Dashboard</h2>
+            <h1>Merkle Tree Control Room</h1>
+          </div>
+          <div class="hero-badge">Live</div>
+        </div>
+        <p class="hero-copy">Drive the full voting workflow from this page, inspect the live tree, and watch integrity changes update in real time as ballots are cast, verified, tampered with, invalidated, or deleted.</p>
       </div>
-      <div class="helper-copy">
+      <div class="section-card helper-copy">
         The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
       </div>
-      <div>
-        <h2>Data Source</h2>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Data Source</h2>
+          <span class="section-note">Session provenance</span>
+        </div>
         <div class="helper-copy">
           <strong id="sourceLabel">-</strong><br>
           <span id="sourceDetail">-</span>
         </div>
       </div>
-      <div>
-        <div class="stat"><span>Root hash</span><strong id="rootHash">-</strong></div>
-        <div class="stat"><span>Total levels</span><strong id="levelCount">-</strong></div>
-        <div class="stat"><span>Leaf nodes</span><strong id="leafCount">-</strong></div>
-        <div class="stat"><span>Registered voters</span><strong id="registeredVoters">-</strong></div>
-        <div class="stat"><span>Ballots cast</span><strong id="ballotCount">-</strong></div>
-        <div class="stat"><span>Valid ballots</span><strong id="validBallots">-</strong></div>
-        <div class="stat"><span>Invalidated ballots</span><strong id="invalidBallots">-</strong></div>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Overview</h2>
+          <span class="section-note" id="rootHash">-</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Levels</div>
+            <div class="stat-value" id="levelCount">-</div>
+            <div class="stat-sub">Tree depth</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Leaf Nodes</div>
+            <div class="stat-value" id="leafCount">-</div>
+            <div class="stat-sub">Receipt-linked leaves</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Registered</div>
+            <div class="stat-value" id="registeredVoters">-</div>
+            <div class="stat-sub">Eligible voters</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ballots</div>
+            <div class="stat-value" id="ballotCount">-</div>
+            <div class="stat-sub">Cast so far</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Valid</div>
+            <div class="stat-value" id="validBallots">-</div>
+            <div class="stat-sub">Counted in tally</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Invalidated</div>
+            <div class="stat-value" id="invalidBallots">-</div>
+            <div class="stat-sub">Removed from tally</div>
+          </div>
+        </div>
       </div>
-      <div>
-        <h2>Candidates</h2>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Candidates</h2>
+          <span class="section-note">Current valid tally</span>
+        </div>
         <div id="candidateList" class="candidate-list"></div>
       </div>
-      <div class="helper-copy">
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Actions</h2>
+          <span class="section-note">Frontend command center</span>
+        </div>
+        <div class="action-form">
+          <div class="action-grid">
+            <div class="field">
+              <label for="registerVoterId">Register Voter</label>
+              <input id="registerVoterId" placeholder="e.g. voter_51" />
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button class="action-btn" id="registerBtn" type="button">Register</button>
+            </div>
+          </div>
+          <div class="action-grid">
+            <div class="field">
+              <label for="voteVoterId">Cast Vote: Voter ID</label>
+              <input id="voteVoterId" placeholder="Registered voter ID" />
+            </div>
+            <div class="field">
+              <label for="voteCandidate">Candidate</label>
+              <select id="voteCandidate">
+                <option>Sam</option>
+                <option>Ali</option>
+                <option>Sarah</option>
+              </select>
+            </div>
+          </div>
+          <button class="action-btn alt" id="castVoteBtn" type="button">Cast Vote</button>
+          <div class="action-row">
+            <button class="action-btn" id="loadDatasetBtn" type="button">Load Sample Dataset</button>
+            <button class="action-btn" id="buildTreeBtn" type="button">Build Merkle Tree</button>
+            <button class="action-btn" id="showSummaryBtn" type="button">Show Summary</button>
+            <button class="action-btn" id="showRegistryBtn" type="button">Show Registry</button>
+          </div>
+          <div class="action-grid">
+            <div class="field">
+              <label for="receiptSelect">Receipt</label>
+              <select id="receiptSelect"></select>
+            </div>
+            <div class="field">
+              <label for="receiptCandidate">Replacement Candidate</label>
+              <select id="receiptCandidate">
+                <option>Sam</option>
+                <option>Ali</option>
+                <option>Sarah</option>
+              </select>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="action-btn" id="verifyBtn" type="button">Verify</button>
+            <button class="action-btn warn" id="tamperBtn" type="button">Tamper</button>
+            <button class="action-btn" id="invalidateBtn" type="button">Invalidate</button>
+            <button class="action-btn warn" id="deleteBtn" type="button">Delete</button>
+          </div>
+          <div class="field">
+            <label for="actionOutput">Backend Output</label>
+            <textarea id="actionOutput" readonly placeholder="Action feedback from the voting workflow will appear here."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Receipts</h2>
+          <span class="section-note">Ballot audit handles</span>
+        </div>
+        <div class="table-shell">
+          <table class="data-table">
+            <thead>
+              <tr><th>Receipt</th><th>Voter</th><th>Vote</th><th>Status</th></tr>
+            </thead>
+            <tbody id="receiptTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Registry</h2>
+          <span class="section-note">Eligibility ledger</span>
+        </div>
+        <div class="table-shell">
+          <table class="data-table">
+            <thead>
+              <tr><th>Voter</th><th>Status</th></tr>
+            </thead>
+            <tbody id="registryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="section-card helper-copy">
         Live data comes from a lightweight local server started by option 5. The browser asks for a fresh JSON snapshot every second and redraws when the election state changes.
       </div>
-      <div>
-        <h2>Legend</h2>
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Legend</h2>
+          <span class="section-note">Node color semantics</span>
+        </div>
         <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
         <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
         <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
@@ -1085,6 +1528,7 @@ class VotingSystem {
     let currentContent = null;
     let lastSignature = "";
     let isApplyingClamp = false;
+    let latestState = null;
 
     const zoom = d3.zoom()
       .scaleExtent([0.35, 2.5])
@@ -1171,6 +1615,45 @@ class VotingSystem {
           <div class="badge">${candidate.votes}</div>
         `;
         candidateList.appendChild(row);
+      });
+
+      const receiptSelect = document.getElementById("receiptSelect");
+      receiptSelect.innerHTML = "";
+      summary.receipts.forEach(receipt => {
+        const option = document.createElement("option");
+        option.value = receipt.receiptId;
+        option.textContent = `${receipt.receiptId} | ${receipt.voterId}`;
+        receiptSelect.appendChild(option);
+      });
+
+      const receiptTableBody = document.getElementById("receiptTableBody");
+      receiptTableBody.innerHTML = "";
+      summary.receipts.forEach(receipt => {
+        const row = document.createElement("tr");
+        const voteLabel = receipt.tampered && receipt.preTamperCandidate
+          ? `${receipt.preTamperCandidate} -> ${receipt.candidate}`
+          : receipt.candidate;
+        const statusBits = [];
+        statusBits.push(receipt.valid ? "Valid" : "Invalidated");
+        if (receipt.tampered) statusBits.push("Tampered");
+        row.innerHTML = `
+          <td>${receipt.receiptId}</td>
+          <td>${receipt.voterId}</td>
+          <td>${voteLabel}</td>
+          <td><span class="status-pill">${statusBits.join(" / ")}</span></td>
+        `;
+        receiptTableBody.appendChild(row);
+      });
+
+      const registryTableBody = document.getElementById("registryTableBody");
+      registryTableBody.innerHTML = "";
+      summary.registry.forEach(entry => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${entry.voterId}</td>
+          <td><span class="status-pill">${entry.hasVoted ? "Voted" : "Eligible"}</span></td>
+        `;
+        registryTableBody.appendChild(row);
       });
     }
 
@@ -1280,19 +1763,34 @@ class VotingSystem {
     }
 
     function applyState(state) {
-      if (!state || !state.tree) return;
-      updateSummary(state);
+      latestState = state;
+      if (!state) return;
+      if (state.summary) updateSummary(state);
+      if (!state.tree) {
+        zoomLayer.selectAll("*").remove();
+        currentContent = null;
+        return;
+      }
       renderTree(state.tree);
       fitToScreen();
     }
 
-    async function refreshState() {
+    async function runAction(params) {
+      const query = new URLSearchParams(params);
+      const response = await fetch(`/api/action?${query.toString()}`, { cache: "no-store" });
+      const result = await response.json();
+      document.getElementById("actionOutput").value = result.message || "";
+      await refreshState(true);
+      return result;
+    }
+
+    async function refreshState(force = false) {
       try {
         const response = await fetch("/api/state", { cache: "no-store" });
         if (!response.ok) return;
         const state = await response.json();
         const signature = JSON.stringify(state);
-        if (signature === lastSignature) return;
+        if (!force && signature === lastSignature) return;
         lastSignature = signature;
         applyState(state);
       } catch (error) {
@@ -1301,6 +1799,44 @@ class VotingSystem {
     }
 
     document.getElementById("fitBtn").addEventListener("click", fitToScreen);
+    document.getElementById("registerBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "register", voter_id: document.getElementById("registerVoterId").value });
+    });
+    document.getElementById("castVoteBtn").addEventListener("click", async () => {
+      await runAction({
+        cmd: "cast_vote",
+        voter_id: document.getElementById("voteVoterId").value,
+        candidate: document.getElementById("voteCandidate").value
+      });
+    });
+    document.getElementById("loadDatasetBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "load_dataset", path: "sample" });
+    });
+    document.getElementById("buildTreeBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "build_tree" });
+    });
+    document.getElementById("showSummaryBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "summary" });
+    });
+    document.getElementById("showRegistryBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "registry" });
+    });
+    document.getElementById("verifyBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "verify", receipt_id: document.getElementById("receiptSelect").value });
+    });
+    document.getElementById("tamperBtn").addEventListener("click", async () => {
+      await runAction({
+        cmd: "tamper",
+        receipt_id: document.getElementById("receiptSelect").value,
+        candidate: document.getElementById("receiptCandidate").value
+      });
+    });
+    document.getElementById("invalidateBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "invalidate", receipt_id: document.getElementById("receiptSelect").value });
+    });
+    document.getElementById("deleteBtn").addEventListener("click", async () => {
+      await runAction({ cmd: "delete", receipt_id: document.getElementById("receiptSelect").value });
+    });
     window.addEventListener("resize", () => {
       svg.attr("viewBox", [0, 0, width(), height()]);
       fitToScreen();
@@ -1346,11 +1882,24 @@ class VotingSystem {
             empty << "\"summary\":{"
                   << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\","
                   << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\","
+                  << "\"treeBuilt\":false,"
                   << "\"registeredVoters\":0,"
                   << "\"ballotCount\":0,"
                   << "\"validBallots\":0,"
                   << "\"invalidBallots\":0,"
-                  << "\"candidates\":[]"
+                  << "\"candidates\":[],"
+                  << "\"receipts\":[],"
+                  << "\"registry\":[";
+            bool first = true;
+            for (const auto& entry : registry_.entries()) {
+                if (!first) empty << ",";
+                first = false;
+                empty << "{"
+                      << "\"voterId\":\"" << json_escape(entry.first) << "\","
+                      << "\"hasVoted\":" << (entry.second ? "true" : "false")
+                      << "}";
+            }
+            empty << "]"
                   << "}}";
             return empty.str();
         }
@@ -1387,6 +1936,7 @@ class VotingSystem {
         summary << "{";
         summary << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\",";
         summary << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\",";
+        summary << "\"treeBuilt\":" << (tree_built_ ? "true" : "false") << ",";
         summary << "\"registeredVoters\":" << registry_.voter_count() << ",";
         summary << "\"ballotCount\":" << ballots_.size() << ",";
         summary << "\"validBallots\":" << valid_ballots << ",";
@@ -1403,6 +1953,31 @@ class VotingSystem {
                     << "\"tamperedVotes\":" << tampered_tally[kv.first]
                     << "}";
         }
+        summary << "],";
+        summary << "\"receipts\":[";
+        for (size_t i = 0; i < ballots_.size(); ++i) {
+            if (i) summary << ",";
+            const auto& b = ballots_[i];
+            summary << "{"
+                    << "\"receiptId\":\"" << json_escape(b.receipt_id) << "\","
+                    << "\"voterId\":\"" << json_escape(b.voter_id) << "\","
+                    << "\"candidate\":\"" << json_escape(b.candidate) << "\","
+                    << "\"preTamperCandidate\":\"" << json_escape(b.pre_tamper_candidate) << "\","
+                    << "\"valid\":" << (b.valid ? "true" : "false") << ","
+                    << "\"tampered\":" << (b.tampered ? "true" : "false")
+                    << "}";
+        }
+        summary << "],";
+        summary << "\"registry\":[";
+        bool first_voter = true;
+        for (const auto& entry : registry_.entries()) {
+            if (!first_voter) summary << ",";
+            first_voter = false;
+            summary << "{"
+                    << "\"voterId\":\"" << json_escape(entry.first) << "\","
+                    << "\"hasVoted\":" << (entry.second ? "true" : "false")
+                    << "}";
+        }
         summary << "]}";
 
         std::ostringstream out;
@@ -1417,6 +1992,103 @@ class VotingSystem {
     std::string visualization_state_json() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
         return visualization_state_json_unlocked();
+    }
+
+    std::string action_result_json(bool ok, const std::string& message) const {
+        std::ostringstream out;
+        out << "{"
+            << "\"ok\":" << (ok ? "true" : "false") << ","
+            << "\"message\":\"" << json_escape(message) << "\""
+            << "}";
+        return out.str();
+    }
+
+    std::string visualization_action_json(const std::string& path) {
+        const std::string action = query_param(path, "cmd");
+        try {
+            if (action == "register") {
+                const std::string voter_id = query_param(path, "voter_id");
+                bool ok = false;
+                const std::string output = capture_stdout([&]() {
+                    ok = this->register_voter(voter_id);
+                });
+                return action_result_json(ok, output.empty() ? (ok ? "Voter registered." : "Registration failed.") : output);
+            }
+            if (action == "cast_vote") {
+                const std::string voter_id = query_param(path, "voter_id");
+                const std::string candidate = query_param(path, "candidate");
+                std::string receipt_id;
+                const std::string output = capture_stdout([&]() {
+                    receipt_id = this->cast_vote(voter_id, candidate);
+                });
+                const bool ok = !receipt_id.empty();
+                return action_result_json(ok, output.empty() ? (ok ? "Vote cast." : "Vote failed.") : output);
+            }
+            if (action == "build_tree") {
+                const std::string output = capture_stdout([&]() {
+                    this->build_tree();
+                });
+                return action_result_json(is_tree_built(), output.empty() ? "Tree build requested." : output);
+            }
+            if (action == "load_dataset") {
+                std::string path_value = query_param(path, "path");
+                if (path_value.empty() || path_value == "sample")
+                    path_value = "data/dataset.csv";
+                const std::string output = capture_stdout([&]() {
+                    this->load_dataset(path_value);
+                });
+                const bool ok = output.find("loaded successfully") != std::string::npos;
+                return action_result_json(ok, output.empty() ? "Dataset load requested." : output);
+            }
+            if (action == "verify") {
+                const std::string receipt_id = query_param(path, "receipt_id");
+                const std::string output = capture_stdout([&]() {
+                    this->verify_vote(receipt_id);
+                });
+                const bool ok = output.find("[OK]") != std::string::npos || output.find("MATCH") != std::string::npos;
+                return action_result_json(ok, output.empty() ? "Verification requested." : output);
+            }
+            if (action == "tamper") {
+                const std::string receipt_id = query_param(path, "receipt_id");
+                const std::string candidate = query_param(path, "candidate");
+                const std::string output = capture_stdout([&]() {
+                    this->tamper_vote(receipt_id, candidate);
+                });
+                const bool ok = output.find("TAMPER DETECTED") != std::string::npos;
+                return action_result_json(ok, output.empty() ? "Tamper simulation requested." : output);
+            }
+            if (action == "invalidate") {
+                const std::string receipt_id = query_param(path, "receipt_id");
+                const std::string output = capture_stdout([&]() {
+                    this->invalidate_ballot(receipt_id);
+                });
+                const bool ok = output.find("[OK] Ballot invalidated") != std::string::npos;
+                return action_result_json(ok, output.empty() ? "Invalidation requested." : output);
+            }
+            if (action == "delete") {
+                const std::string receipt_id = query_param(path, "receipt_id");
+                const std::string output = capture_stdout([&]() {
+                    this->delete_ballot(receipt_id);
+                });
+                const bool ok = output.find("[OK] Ballot deleted") != std::string::npos;
+                return action_result_json(ok, output.empty() ? "Deletion requested." : output);
+            }
+            if (action == "summary") {
+                const std::string output = capture_stdout([&]() {
+                    this->display_summary();
+                });
+                return action_result_json(true, output);
+            }
+            if (action == "registry") {
+                const std::string output = capture_stdout([&]() {
+                    this->print_registry();
+                });
+                return action_result_json(true, output);
+            }
+            return action_result_json(false, "Unknown action.");
+        } catch (const std::exception& ex) {
+            return action_result_json(false, ex.what());
+        }
     }
 
 public:
@@ -1956,6 +2628,7 @@ public:
                 const bool started = vis_server_.start(
                     merkle_html,
                     [this]() { return this->visualization_state_json(); },
+                    [this](const std::string& path) { return this->visualization_action_json(path); },
                     launcher_html,
                     mmr_html,
                     8080);

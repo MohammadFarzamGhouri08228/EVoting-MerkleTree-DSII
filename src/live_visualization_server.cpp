@@ -63,6 +63,11 @@ std::string LiveVisualizationServer::path_from_request(const std::string& reques
     return request.substr(path_start, path_end - path_start);
 }
 
+static std::string strip_query(const std::string& path) {
+    const std::size_t query_pos = path.find('?');
+    return query_pos == std::string::npos ? path : path.substr(0, query_pos);
+}
+
 bool LiveVisualizationServer::bind_and_listen(int preferred_port) {
     if (!init_sockets()) return false;
 
@@ -102,24 +107,28 @@ void LiveVisualizationServer::handle_client(Socket client) {
 
     const std::string request(buffer);
     const std::string path = path_from_request(request);
+    const std::string route = strip_query(path);
 
     std::string response;
-    if (path == "/" || path == "/index.html") {
+    if (route == "/" || route == "/index.html") {
         const std::string& page = launcher_page_html_.empty()
             ? merkle_page_html_
             : launcher_page_html_;
         response = http_response("200 OK", "text/html", page);
-    } else if (path == "/merkle") {
+    } else if (route == "/merkle") {
         response = http_response("200 OK", "text/html", merkle_page_html_);
-    } else if (path == "/mmr") {
+    } else if (route == "/mmr") {
         const std::string& page = mmr_page_html_.empty()
             ? not_found_body()
             : mmr_page_html_;
         response = http_response(mmr_page_html_.empty() ? "404 Not Found" : "200 OK",
                                  "text/html", page);
-    } else if (path == "/api/state") {
+    } else if (route == "/api/state") {
         response = http_response("200 OK", "application/json",
                                  state_provider_ ? state_provider_() : "{}");
+    } else if (route == "/api/action") {
+        response = http_response("200 OK", "application/json",
+                                 action_handler_ ? action_handler_(path) : "{\"ok\":false,\"message\":\"No action handler configured.\"}");
     } else {
         response = http_response("404 Not Found", "text/html", not_found_body());
     }
@@ -147,6 +156,7 @@ void LiveVisualizationServer::serve_loop() {
 
 bool LiveVisualizationServer::start(const std::string& merkle_page_html,
                StateProvider state_provider,
+               ActionHandler action_handler,
                const std::string& launcher_page_html,
                const std::string& mmr_page_html,
                int preferred_port) {
@@ -155,6 +165,7 @@ bool LiveVisualizationServer::start(const std::string& merkle_page_html,
     launcher_page_html_ = launcher_page_html;
     mmr_page_html_ = mmr_page_html;
     state_provider_ = std::move(state_provider);
+    action_handler_ = std::move(action_handler);
 
     if (!bind_and_listen(preferred_port))
         return false;

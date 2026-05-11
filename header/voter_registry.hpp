@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <vector>
 
 class VoterRegistry {
 
@@ -80,6 +81,7 @@ public:
 
     int voter_count()  const;
     int receipt_count() const;
+    std::vector<std::pair<std::string, bool>> entries() const;
 
     // Print the current registry state (for demo/debug).
     void print_registry() const;
