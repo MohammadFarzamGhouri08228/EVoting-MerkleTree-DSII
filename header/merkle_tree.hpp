@@ -119,7 +119,8 @@ class MerkleTree {
         const std::vector<std::string>& voter_ids,
         const std::vector<std::string>& candidates,
         const std::vector<std::string>& receipt_ids,
-        const std::vector<bool>& tampered_flags) const
+        const std::vector<bool>& tampered_flags,
+        bool is_duplicate_visual = false) const
     {
         std::ostringstream oss;
         const bool is_root = (node == root_);
@@ -134,7 +135,9 @@ class MerkleTree {
         std::string label;
         if (is_root) label = "ROOT: " + short_h(node->hash, 8);
         else if (is_deleted) label = "[NULLIFIED]";
-        else if (is_leaf) label = "LEAF: " + short_h(node->hash, 8);
+        else if (is_leaf) label = is_duplicate_visual
+            ? "DUP: " + short_h(node->hash, 8)
+            : "LEAF: " + short_h(node->hash, 8);
         else label = "Lvl " + std::to_string(level) + ": " + short_h(node->hash, 8);
 
         oss << "{";
@@ -144,6 +147,7 @@ class MerkleTree {
         oss << "\"shortHash\":\"" << json_escape(short_h(node->hash, 12)) << "\",";
         oss << "\"level\":" << level << ",";
         oss << "\"deleted\":" << (is_deleted ? "true" : "false");
+        oss << ",\"duplicated\":" << (is_duplicate_visual ? "true" : "false");
 
         if (is_leaf) {
             auto it = leaf_index_map.find(node);
@@ -169,6 +173,10 @@ class MerkleTree {
             children.push_back(visualization_json_for(
                 node->right, level + 1, leaf_index_map,
                 voter_ids, candidates, receipt_ids, tampered_flags));
+        } else if (node->left) {
+            children.push_back(visualization_json_for(
+                node->left, level + 1, leaf_index_map,
+                voter_ids, candidates, receipt_ids, tampered_flags, true));
         }
 
         if (!children.empty()) {

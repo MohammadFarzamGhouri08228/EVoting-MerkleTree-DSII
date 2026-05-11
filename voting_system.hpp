@@ -49,6 +49,9 @@ class VotingSystem {
     bool                dataset_loaded_ = false;
     std::string         dataset_source_ = "";
     bool                changed_after_dataset_load_ = false;
+    std::vector<std::string> animation_steps_;
+    std::string         animation_reason_;
+    int                 animation_nonce_ = 0;
 
     // ------------------------------------------------------------------
     // Internal helpers
@@ -1469,6 +1472,10 @@ class VotingSystem {
       rx: 14px;
       ry: 14px;
     }
+    .node-card.duplicated {
+      stroke-dasharray: 6 4;
+      opacity: 0.86;
+    }
     .node text {
       font-size: 12px;
       fill: var(--ink);
@@ -1721,6 +1728,7 @@ class VotingSystem {
     const zoomLayer = svg.append("g");
     let currentContent = null;
     let lastSignature = "";
+    let lastAnimationNonce = -1;
 
     const zoom = d3.zoom()
       .scaleExtent([0.35, 2.5])
@@ -1867,6 +1875,7 @@ class VotingSystem {
 
       node.append("rect")
         .attr("class", "node-card")
+        .classed("duplicated", d => !!d.data.duplicated)
         .attr("x", -66)
         .attr("y", -22)
         .attr("width", 132)
@@ -1892,6 +1901,29 @@ class VotingSystem {
         zoom.transform,
         d3.zoomIdentity.translate(tx, ty).scale(scale)
       );
+    }
+
+    function ensureTreeVisible() {
+      workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function playAnimation(state) {
+      if (!state || !state.animation || !Array.isArray(state.animation.steps)) return false;
+      if (state.animation.nonce === lastAnimationNonce || state.animation.steps.length === 0) return false;
+      lastAnimationNonce = state.animation.nonce;
+      ensureTreeVisible();
+      for (const step of state.animation.steps) {
+        if (step.summary && step.summary.stepLabel) {
+          document.getElementById("actionOutput").value = step.summary.stepLabel;
+        }
+        if (step.summary) updateSummary(step);
+        if (step.tree) {
+          renderTree(step.tree);
+          fitToScreen();
+        }
+        await new Promise(resolve => setTimeout(resolve, 650));
+      }
+      return true;
     }
 
     function applyState(state) {
@@ -1923,6 +1955,11 @@ class VotingSystem {
         const signature = JSON.stringify(state);
         if (!force && signature === lastSignature) return;
         lastSignature = signature;
+        const animated = await playAnimation(state);
+        if (animated) {
+          applyState(state);
+          return;
+        }
         applyState(state);
       } catch (error) {
         console.error("Visualization refresh failed:", error);
@@ -2002,6 +2039,99 @@ class VotingSystem {
             return dataset_source_;
         }
         return "Built from actions in this currently running CLI session.";
+    }
+
+    std::string build_visualization_state_for_prefix_unlocked(
+        size_t leaf_count,
+        const std::string& step_label) const
+    {
+        std::ostringstream out;
+        if (leaf_count == 0 || leaf_count > ballots_.size()) {
+            out << "{\"tree\":null,\"summary\":{\"stepLabel\":\"" << json_escape(step_label) << "\"}}";
+            return out.str();
+        }
+
+        std::vector<std::string> voter_ids;
+        std::vector<std::string> candidates;
+        std::vector<std::string> receipt_ids;
+        std::vector<bool> tampered_flags;
+        std::vector<std::string> leaves;
+        std::unordered_map<std::string, int> tally;
+        std::unordered_map<std::string, int> tampered_tally;
+        int valid_ballots = 0;
+        int invalid_ballots = 0;
+
+        voter_ids.reserve(leaf_count);
+        candidates.reserve(leaf_count);
+        receipt_ids.reserve(leaf_count);
+        tampered_flags.reserve(leaf_count);
+        leaves.reserve(leaf_count);
+
+        for (size_t i = 0; i < leaf_count; ++i) {
+            const auto& b = ballots_[i];
+            voter_ids.push_back(b.voter_id);
+            candidates.push_back(b.valid ? b.candidate : "NULLIFIED");
+            receipt_ids.push_back(b.receipt_id);
+            tampered_flags.push_back(b.valid && b.tampered);
+            leaves.push_back(ballot_leaf_hash(b));
+            if (b.valid) {
+                ++valid_ballots;
+                ++tally[b.candidate];
+                if (b.tampered) ++tampered_tally[b.candidate];
+            } else {
+                ++invalid_ballots;
+            }
+        }
+
+        MerkleTree temp_tree;
+        temp_tree.build(leaves);
+
+        std::ostringstream summary;
+        summary << "{";
+        summary << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\",";
+        summary << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\",";
+        summary << "\"treeBuilt\":true,";
+        summary << "\"registeredVoters\":" << registry_.voter_count() << ",";
+        summary << "\"ballotCount\":" << leaf_count << ",";
+        summary << "\"validBallots\":" << valid_ballots << ",";
+        summary << "\"invalidBallots\":" << invalid_ballots << ",";
+        summary << "\"merkleRoot\":\"" << json_escape(temp_tree.get_root()) << "\",";
+        summary << "\"stepLabel\":\"" << json_escape(step_label) << "\",";
+        summary << "\"candidates\":[";
+        bool first = true;
+        for (const auto& kv : tally) {
+            if (!first) summary << ",";
+            first = false;
+            summary << "{"
+                    << "\"name\":\"" << json_escape(kv.first) << "\","
+                    << "\"votes\":" << kv.second << ","
+                    << "\"tamperedVotes\":" << tampered_tally[kv.first]
+                    << "}";
+        }
+        summary << "],\"receipts\":[],\"registry\":[]}";
+
+        out << "{";
+        out << "\"tree\":" << temp_tree.export_visualization_json(
+            voter_ids, candidates, receipt_ids, tampered_flags) << ",";
+        out << "\"summary\":" << summary.str();
+        out << "}";
+        return out.str();
+    }
+
+    void queue_build_animation_unlocked(size_t final_leaf_count, const std::string& reason) {
+        animation_steps_.clear();
+        animation_reason_ = reason;
+        if (final_leaf_count == 0) {
+            ++animation_nonce_;
+            return;
+        }
+        for (size_t i = 1; i <= final_leaf_count; ++i) {
+            animation_steps_.push_back(
+                build_visualization_state_for_prefix_unlocked(
+                    i,
+                    "Building tree: placed " + std::to_string(i) + " of " + std::to_string(final_leaf_count) + " leaves"));
+        }
+        ++animation_nonce_;
     }
 
     std::string visualization_state_json_unlocked() const {
@@ -2114,7 +2244,16 @@ class VotingSystem {
         out << "{";
         out << "\"tree\":" << tree_.export_visualization_json(
             voter_ids, candidates, receipt_ids, tampered_flags) << ",";
-        out << "\"summary\":" << summary.str();
+        out << "\"summary\":" << summary.str() << ",";
+        out << "\"animation\":{";
+        out << "\"nonce\":" << animation_nonce_ << ",";
+        out << "\"reason\":\"" << json_escape(animation_reason_) << "\",";
+        out << "\"steps\":[";
+        for (size_t i = 0; i < animation_steps_.size(); ++i) {
+            if (i) out << ",";
+            out << animation_steps_[i];
+        }
+        out << "]}";
         out << "}";
         return out.str();
     }
@@ -2319,10 +2458,23 @@ public:
         if (tree_built_) {
             // Tree is live — insert the new leaf incrementally using node pointers.
             int prev_count = tree_.leaf_count();
+            const bool was_log_n = (prev_count % 2 == 1);
+            if (was_log_n) {
+                animation_steps_.clear();
+                animation_steps_.push_back(
+                    build_visualization_state_for_prefix_unlocked(
+                        static_cast<size_t>(prev_count),
+                        "Preparing incremental insertion for the new ballot"));
+                animation_reason_ = "incremental_insert";
+            } else {
+                queue_build_animation_unlocked(ballots_.size(), "rebuild_insert");
+            }
             tree_.insert(b.to_hash());
             last_built_root_ = tree_.get_root();
-
-            bool was_log_n = (prev_count % 2 == 1);
+            if (was_log_n) {
+                animation_steps_.push_back(visualization_state_json_unlocked());
+                ++animation_nonce_;
+            }
             std::cout << "      Leaf inserted into Merkle Tree  ("
                       << (was_log_n ? "O(log n) — odd-count fast path"
                                     : "O(n) — even-count rebuild")
@@ -2353,6 +2505,7 @@ public:
         for (const auto& b : ballots_)
             leaves.push_back(ballot_leaf_hash(b));   // sentinel for invalidated
 
+        queue_build_animation_unlocked(ballots_.size(), "build_tree");
         tree_.build(leaves);
         last_built_root_ = tree_.get_root();
         tree_built_      = true;
