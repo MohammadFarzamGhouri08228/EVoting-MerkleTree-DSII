@@ -1564,6 +1564,32 @@ class VotingSystem {
     .result-card.visible {
       opacity: 1;
       transform: translateY(0);
+      pointer-events: auto;
+    }
+    .result-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .result-close {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(24,55,63,0.08);
+      color: var(--ink);
+      box-shadow: none;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .result-close:hover {
+      filter: none;
+      background: rgba(24,55,63,0.14);
     }
     .result-pill {
       display: inline-flex;
@@ -2082,7 +2108,10 @@ class VotingSystem {
 
     function showResultCard(verify) {
       resultCard.innerHTML = `
-        <div class="result-pill ${verify.match ? "match" : "mismatch"}">${verify.match ? "Match" : "Mismatch"}</div>
+        <div class="result-card-header">
+          <div class="result-pill ${verify.match ? "match" : "mismatch"}">${verify.match ? "Match" : "Mismatch"}</div>
+          <button class="result-close" id="resultCloseBtn" type="button" aria-label="Close verification result">×</button>
+        </div>
         <div class="result-grid">
           <div class="result-box"><strong>Receipt</strong><br>${verify.receiptId}</div>
           <div class="result-box"><strong>Computed Root</strong><br>${verify.computedRoot}</div>
@@ -2091,6 +2120,7 @@ class VotingSystem {
         </div>
       `;
       resultCard.classList.add("visible");
+      document.getElementById("resultCloseBtn").addEventListener("click", clearProofOverlay);
     }
 
     async function animateVerification(verify) {
