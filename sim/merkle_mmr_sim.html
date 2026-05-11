@@ -587,9 +587,9 @@
         let manualVoteIndex = 1;
         let currentViz = "mmr";
         let activeSmtPath = [];
-        let knownSmtNodeIds = new Set();
-        let knownSmtNodeHashes = new Map();
         let smtRenderVersion = 0;
+        let smtAnimationBusy = false;
+        let pendingSmtRender = null;
 
         // --- D3 Setup ---
         const svg = d3.select("#mmr-svg");
@@ -787,6 +787,80 @@
             return d.data.id || "root";
         }
 
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function pseudoParentHash(left, right, rootHash, isRoot) {
+            if (isRoot && rootHash) return rootHash;
+            const seed = `${left.h}|${right ? right.h : left.h}`;
+            let hash = 2166136261;
+            for (let i = 0; i < seed.length; ++i) {
+                hash ^= seed.charCodeAt(i);
+                hash = Math.imul(hash, 16777619);
+            }
+            return `node${(hash >>> 0).toString(16).padStart(8, "0")}`;
+        }
+
+        function buildSmtVectorLayers(data, cw) {
+            const entries = [...(data.entries || [])].sort((a, b) => a.key - b.key);
+            if (entries.length === 0) return { layers: [], nodes: [], links: [] };
+
+            const gap = Math.max(76, Math.min(118, cw / Math.max(entries.length, 1)));
+            const rowGap = 82;
+            let current = entries.map((entry, i) => ({
+                id: `leaf-${i}`,
+                h: entry.hash,
+                short: shortHash(entry.hash, 10),
+                d: data.depth,
+                entry,
+                level: 0,
+                x: i * gap,
+                y: 0
+            }));
+
+            const layers = [current];
+            while (current.length > 1) {
+                const next = [];
+                const isRootLayer = current.length <= 2;
+                for (let i = 0; i < current.length; i += 2) {
+                    const left = current[i];
+                    const right = current[i + 1] || current[i];
+                    const h = pseudoParentHash(left, right, data.root, isRootLayer && i === 0);
+                    next.push({
+                        id: `layer-${layers.length}-${Math.floor(i / 2)}`,
+                        h,
+                        short: shortHash(h, 10),
+                        d: Math.max(0, data.depth - layers.length),
+                        level: layers.length,
+                        childrenRefs: right === left ? [left] : [left, right],
+                        x: (left.x + right.x) / 2,
+                        y: 0
+                    });
+                }
+                layers.push(next);
+                current = next;
+            }
+
+            const totalLevels = layers.length;
+            layers.forEach((layer, level) => {
+                layer.forEach(node => {
+                    node.y = (totalLevels - 1 - level) * rowGap;
+                });
+            });
+
+            const links = [];
+            for (let level = 1; level < layers.length; ++level) {
+                layers[level].forEach(parent => {
+                    parent.childrenRefs.forEach(child => {
+                        links.push({ source: parent, target: child, parentLevel: level });
+                    });
+                });
+            }
+
+            return { layers, nodes: layers.flat(), links };
+        }
+
         async function updateVisualization() {
             if (currentViz === "smt") {
                 await updateSparseVisualization(activeSmtPath);
@@ -907,108 +981,117 @@
 
         async function updateSparseVisualization(pathIds = []) {
             const data = await apiCall('/api/smt');
+            if (smtAnimationBusy) {
+                pendingSmtRender = { data, pathIds };
+                return;
+            }
+            await renderSparseBuildPlayback(data, pathIds);
+        }
+
+        async function renderSparseBuildPlayback(data, pathIds = []) {
             const renderVersion = ++smtRenderVersion;
-            const previousIds = knownSmtNodeIds;
-            const previousHashes = knownSmtNodeHashes;
+            smtAnimationBusy = true;
             svgGroup.selectAll("*").remove();
             if (!data || !data.tree) {
-                knownSmtNodeIds = new Set();
-                knownSmtNodeHashes = new Map();
+                smtAnimationBusy = false;
                 return;
             }
 
             const entryByHash = {};
             (data.entries || []).forEach(e => { entryByHash[e.hash] = e; });
-            const pathSet = new Set(pathIds || []);
-
-            const root = d3.hierarchy(data.tree, d => {
-                const children = [];
-                if (d.l) children.push(d.l);
-                if (d.r) children.push(d.r);
-                return children.length ? children : null;
-            });
 
             const svgEl = document.getElementById('mmr-svg');
             const cw = svgEl.clientWidth;
             const ch = svgEl.clientHeight;
-            const leaves = root.leaves().length || 1;
-            const maxDepth = d3.max(root.descendants(), d => d.depth) || 1;
-            const virtualWidth = Math.max(cw * 2.4, leaves * 34, 1600);
-            const virtualHeight = Math.max(ch * 1.35, maxDepth * 64, 760);
-            const layout = d3.tree().size([virtualWidth, virtualHeight]);
-            layout(root);
+            const layerPauseMs = 900;
+            const vectorTree = buildSmtVectorLayers(data, cw);
+            if (vectorTree.nodes.length === 0) {
+                smtAnimationBusy = false;
+                return;
+            }
 
             const g = svgGroup.append("g").attr("transform", "translate(80,70)");
-            const nodes = root.descendants();
-            const links = root.links();
-            const nextIds = new Set(nodes.map(smtNodeKey));
-            const nextHashes = new Map(nodes.map(d => [smtNodeKey(d), d.data.h]));
-            const revealDelay = d => {
-                const id = smtNodeKey(d);
-                const changed = previousHashes.get(id) && previousHashes.get(id) !== d.data.h;
-                if (previousIds.has(id) && !changed) return 0;
-                return Math.min(d.depth, 16) * 95;
-            };
+            const nodes = vectorTree.nodes;
+            const links = vectorTree.links;
 
-            g.selectAll(".link")
+            const link = g.selectAll(".link")
                 .data(links)
                 .enter().append("path")
-                .attr("class", d => `link ${pathSet.has(d.target.data.id) ? 'smt-path' : ''}`)
+                .attr("class", "link")
                 .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y))
-                .attr("opacity", d => previousIds.has(smtNodeKey(d.target)) ? 1 : 0)
-                .transition()
-                .delay(d => revealDelay(d.target))
-                .duration(260)
-                .attr("opacity", 1);
+                .attr("opacity", 0);
 
             const node = g.selectAll(".node")
                 .data(nodes)
                 .enter().append("g")
                 .attr("class", d => {
-                    const entry = entryByHash[d.data.h];
+                    const entry = entryByHash[d.h];
                     let cls = "node internal ";
-                    if (!d.children) cls = "node leaf ";
+                    if (d.level === 0) cls = "node leaf ";
                     if (entry) cls += entry.hasVoted ? "smt-voted " : "smt-unvoted ";
-                    if (pathSet.has(d.data.id)) cls += "smt-path ";
                     return cls;
                 })
                 .attr("transform", d => `translate(${d.x},${d.y})`)
-                .attr("opacity", d => {
-                    const id = smtNodeKey(d);
-                    const changed = previousHashes.get(id) && previousHashes.get(id) !== d.data.h;
-                    return previousIds.has(id) && !changed ? 1 : 0;
-                })
-                .on("mouseover", (event, d) => showSmtTooltip(event, d, entryByHash))
+                .attr("opacity", 0)
+                .on("mouseover", (event, d) => showSmtTooltip(event, { data: d, children: d.level > 0 }, entryByHash))
                 .on("mousemove", moveTooltip)
                 .on("mouseleave", hideTooltip);
 
             node.append("circle")
-                .attr("r", d => previousIds.has(smtNodeKey(d)) ? 10 : 2);
+                .attr("r", 2);
             node.append("text")
                 .attr("dy", "0.3em")
-                .text(d => (d.data.short || d.data.h).substring(0, 4) + "..");
-
-            node.transition()
-                .delay(revealDelay)
-                .duration(280)
-                .attr("opacity", 1);
-
-            node.select("circle")
-                .transition()
-                .delay(revealDelay)
-                .duration(280)
-                .attr("r", 10)
-                .transition()
-                .duration(180)
-                .attr("r", d => pathSet.has(d.data.id) ? 12 : 10);
+                .text(d => (d.short || d.h).substring(0, 4) + "..");
 
             applyFitTransform(svgGroup.node().getBBox(), 110, 0.78);
 
-            setTimeout(() => {
-                if (renderVersion !== smtRenderVersion) return;
-                knownSmtNodeIds = nextIds;
-                knownSmtNodeHashes = nextHashes;
-            }, 1700);
+            const revealNodes = async (selection, delayFn) => {
+                if (selection.empty() || renderVersion !== smtRenderVersion) return;
+                await selection
+                    .transition()
+                    .delay(delayFn)
+                    .duration(700)
+                    .attr("opacity", 1)
+                    .select("circle")
+                    .attr("r", 10)
+                    .end()
+                    .catch(() => {});
+                await sleep(layerPauseMs);
+            };
+
+            const revealLinks = async (selection) => {
+                if (selection.empty() || renderVersion !== smtRenderVersion) return;
+                await selection
+                    .transition()
+                    .duration(650)
+                    .attr("opacity", 1)
+                    .end()
+                    .catch(() => {});
+            };
+
+            const leafNodes = node
+                .filter(d => !d.children)
+                .sort((a, b) => a.x - b.x);
+            leafNodes
+                .attr("opacity", 1)
+                .select("circle")
+                .attr("r", 10);
+            await sleep(layerPauseMs);
+
+            for (let level = 1; level < vectorTree.layers.length; ++level) {
+                if (renderVersion !== smtRenderVersion) break;
+                const layerNodes = node.filter(d => d.level === level);
+                const layerLinks = link.filter(d => d.parentLevel === level);
+                await revealLinks(layerLinks);
+                await revealNodes(layerNodes, () => 0);
+            }
+
+            smtAnimationBusy = false;
+            if (pendingSmtRender) {
+                const next = pendingSmtRender;
+                pendingSmtRender = null;
+                await renderSparseBuildPlayback(next.data, next.pathIds);
+            }
         }
 
         // --- Event Listeners & Actions ---
@@ -1017,20 +1100,29 @@
             if (!pollingInterval) pollingInterval = setInterval(updateDashboard, 500);
         }
 
+        function stopSimulationOnClose() {
+            try {
+                fetch('/api/action?cmd=stop_all', { keepalive: true }).catch(() => {});
+            } catch (_) {}
+        }
+
+        window.addEventListener('pagehide', stopSimulationOnClose);
+        window.addEventListener('beforeunload', stopSimulationOnClose);
+
         document.getElementById('btn-config').addEventListener('click', async () => {
             const mv = document.getElementById('cfg-max').value || -1;
             const iv = document.getElementById('cfg-interval').value || 10;
             await apiCall(`/api/action?cmd=configure&votes=${mv}&interval=${iv}`);
-            knownSmtNodeIds = new Set();
-            knownSmtNodeHashes = new Map();
+            pendingSmtRender = null;
+            smtAnimationBusy = false;
             updateDashboard();
         });
 
         document.getElementById('btn-load').addEventListener('click', async () => {
             const p = document.getElementById('cfg-path').value;
             await apiCall(`/api/action?cmd=load&path=${encodeURIComponent(p)}`);
-            knownSmtNodeIds = new Set();
-            knownSmtNodeHashes = new Map();
+            pendingSmtRender = null;
+            smtAnimationBusy = false;
             updateDashboard();
         });
 
@@ -1056,8 +1148,8 @@
             candidates = [];
             lastLeafCount = -1;
             lastSmtRoot = "";
-            knownSmtNodeIds = new Set();
-            knownSmtNodeHashes = new Map();
+            pendingSmtRender = null;
+            smtAnimationBusy = false;
             activeSmtPath = [];
             document.getElementById('proof-panel').style.display = 'none';
             manualVoteIndex = 1;

@@ -879,6 +879,11 @@ bool MMRSimulation::start(int preferred_port) {
                             ok = run_auto(rate);
                         } else if (cmd == "stop") {
                             stop_auto(); ok = true;
+                        } else if (cmd == "stop_all") {
+                            stop_auto();
+                            reg_runner_active_ = false;
+                            if (reg_runner_thread_.joinable()) reg_runner_thread_.join();
+                            ok = true;
                         } else if (cmd == "reset") {
                             stop_auto();
                             reg_runner_active_ = false;
@@ -938,7 +943,7 @@ bool MMRSimulation::start(int preferred_port) {
                                                 added++;
                                             }
                                         }
-                                        std::this_thread::sleep_for(std::chrono::milliseconds(180));
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(1200));
                                     }
                                     reg_runner_active_ = false;
                                 });

@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
     VotingSystem vs;
 
     if (argc > 1 && std::string(argv[1]) == "--web-home") {
-        if (!vs.export_web_visualization()) return 1;
+        if (!vs.export_web_visualization("sim/merkle_tree_vis.html", false)) return 1;
         std::cout << "  [*] Web homepage mode is running. Close this process to stop it.\n";
         while (true) {
             std::this_thread::sleep_for(std::chrono::hours(24));

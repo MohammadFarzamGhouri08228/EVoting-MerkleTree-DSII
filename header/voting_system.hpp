@@ -3275,7 +3275,8 @@ public:
         registry_.print_registry();
     }
 
-    bool export_web_visualization(const std::string& output_path = "sim/merkle_tree_vis.html") {
+    bool export_web_visualization(const std::string& output_path = "sim/merkle_tree_vis.html",
+                                  bool open_browser = true) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         (void)output_path;
 
@@ -3301,10 +3302,12 @@ public:
                 std::cout << "  [*] Visualization hub already running at " << vis_server_.url() << "\n";
             }
 
-            std::cout << "  [*] Opening in your default web browser...\n";
-            if (!open_in_browser(vis_server_.url())) {
-                std::cout << "  [!] Browser launch failed. Open this URL manually: "
-                          << vis_server_.url() << "\n";
+            if (open_browser) {
+                std::cout << "  [*] Opening in your default web browser...\n";
+                if (!open_in_browser(vis_server_.url())) {
+                    std::cout << "  [!] Browser launch failed. Open this URL manually: "
+                              << vis_server_.url() << "\n";
+                }
             }
             return true;
         } catch (const std::exception& ex) {
