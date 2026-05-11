@@ -1862,7 +1862,6 @@ class VotingSystem {
             <div class="receipt-actions">
               <button class="action-btn" id="verifyBtn" type="button">Verify</button>
               <button class="action-btn warn" id="tamperBtn" type="button">Tamper</button>
-              <button class="action-btn" id="invalidateBtn" type="button">Invalidate</button>
               <button class="action-btn warn" id="deleteBtn" type="button">Delete</button>
             </div>
           </div>
@@ -2386,9 +2385,6 @@ class VotingSystem {
         receipt_id: document.getElementById("receiptSelect").value,
         candidate: document.getElementById("receiptCandidate").value
       });
-    });
-    document.getElementById("invalidateBtn").addEventListener("click", async () => {
-      await runAction({ cmd: "invalidate", receipt_id: document.getElementById("receiptSelect").value });
     });
     document.getElementById("deleteBtn").addEventListener("click", async () => {
       await runAction({ cmd: "delete", receipt_id: document.getElementById("receiptSelect").value });
