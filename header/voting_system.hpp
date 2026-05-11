@@ -1517,7 +1517,22 @@ class VotingSystem {
     }
     .node-card.duplicated {
       stroke-dasharray: 6 4;
-      opacity: 0.86;
+      opacity: 0.58;
+      fill-opacity: 0.74;
+    }
+    .node-card.focused {
+      stroke-width: 4px;
+      filter: drop-shadow(0 0 14px rgba(212,155,34,0.42));
+    }
+    .node-card.changed {
+      stroke-width: 4px;
+      filter: drop-shadow(0 0 14px rgba(46,138,99,0.34));
+    }
+    .node-card.vanishing {
+      stroke: #c75b4e;
+      fill: #f8ddd9;
+      stroke-width: 4px;
+      filter: drop-shadow(0 0 14px rgba(199,91,78,0.34));
     }
     .node text {
       font-size: 12px;
@@ -1698,6 +1713,17 @@ class VotingSystem {
       filter: drop-shadow(0 0 16px rgba(199,91,78,0.42));
       animation: pulseMismatch 1s ease-in-out 2;
     }
+    .action-banner {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(212,155,34,0.16), rgba(46,138,99,0.10));
+      border: 1px solid rgba(24,55,63,0.08);
+      color: var(--ink);
+      font-size: 0.88rem;
+      line-height: 1.45;
+      min-height: 50px;
+    }
     @keyframes pulseMismatch {
       0% { transform: scale(1); }
       50% { transform: scale(1.04); }
@@ -1846,6 +1872,7 @@ class VotingSystem {
             <div class="field">
               <textarea id="actionOutput" readonly placeholder="Action feedback from the voting workflow will appear here."></textarea>
             </div>
+            <div id="actionBanner" class="action-banner">Waiting for the next tree action.</div>
           </div>
         </div>
       </section>
@@ -1889,7 +1916,8 @@ class VotingSystem {
           <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
           <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
           <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
-          <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated leaf sentinel</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);border-style:dashed;opacity:0.7;"></span><span>Temporary duplicate for odd pairing</span></div>
           <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
         </div>
       </section>
@@ -1932,6 +1960,7 @@ class VotingSystem {
     let lastAnimationNonce = -1;
     let currentNodeSelection = null;
     let currentLinkSelection = null;
+    let previousStepTree = null;
 
     const zoom = d3.zoom()
       .scaleExtent([0.35, 2.5])
@@ -1989,13 +2018,19 @@ class VotingSystem {
     function updateSummary(state) {
       const treeData = state.tree;
       const summary = state.summary;
-      const root = d3.hierarchy(treeData);
-
+      document.getElementById("actionBanner").textContent = summary.stepLabel || "Live tree state is up to date.";
       document.getElementById("sourceLabel").textContent = summary.sourceLabel || "-";
       document.getElementById("sourceDetail").textContent = summary.sourceDetail || "-";
-      document.getElementById("rootHash").textContent = treeData.shortHash || "-";
-      document.getElementById("levelCount").textContent = String(root.height + 1);
-      document.getElementById("leafCount").textContent = String(root.leaves().length);
+      if (treeData) {
+        const root = d3.hierarchy(treeData);
+        document.getElementById("rootHash").textContent = treeData.shortHash || "-";
+        document.getElementById("levelCount").textContent = String(root.height + 1);
+        document.getElementById("leafCount").textContent = String(root.leaves().length);
+      } else {
+        document.getElementById("rootHash").textContent = "-";
+        document.getElementById("levelCount").textContent = "0";
+        document.getElementById("leafCount").textContent = "0";
+      }
       document.getElementById("registeredVoters").textContent = String(summary.registeredVoters);
       document.getElementById("ballotCount").textContent = String(summary.ballotCount);
       document.getElementById("validBallots").textContent = String(summary.validBallots);
@@ -2103,6 +2138,34 @@ class VotingSystem {
 
       attachTooltip(node);
       currentNodeSelection = node;
+    }
+
+    function collectNodesByHash(treeData, acc = new Map()) {
+      if (!treeData) return acc;
+      acc.set(treeData.hash, treeData);
+      if (Array.isArray(treeData.children)) {
+        treeData.children.forEach(child => collectNodesByHash(child, acc));
+      }
+      return acc;
+    }
+
+    function markStepDiffs(currentTree, stepSummary) {
+      if (!currentNodeSelection || !currentTree) return;
+      const previousNodes = collectNodesByHash(previousStepTree);
+      const currentNodes = collectNodesByHash(currentTree);
+      const focusedReceiptId = stepSummary && stepSummary.focusReceiptId ? stepSummary.focusReceiptId : "";
+      const removedFocusHash = previousStepTree && focusedReceiptId
+        ? Array.from(previousNodes.values()).find(node => node.receiptId === focusedReceiptId)?.hash
+        : "";
+
+      currentNodeSelection.select(".node-card")
+        .classed("focused", d => focusedReceiptId && d.data.receiptId === focusedReceiptId)
+        .classed("changed", d => !!previousStepTree && !d.data.duplicated && (!previousNodes.has(d.data.hash) || (d.data.kind !== "leaf" && d.data.kind !== "duplicate")))
+        .classed("vanishing", d => removedFocusHash && d.data.hash === removedFocusHash);
+
+      if (removedFocusHash && !currentNodes.has(removedFocusHash)) {
+        currentNodeSelection.select(".node-card").classed("vanishing", false);
+      }
     }
 
     function fitToScreen() {
@@ -2237,8 +2300,10 @@ class VotingSystem {
         if (step.summary) updateSummary(step);
         if (step.tree) {
           renderTree(step.tree);
+          markStepDiffs(step.tree, step.summary || {});
           fitToScreen();
         }
+        previousStepTree = step.tree || previousStepTree;
         await new Promise(resolve => setTimeout(resolve, 650));
       }
       return true;
@@ -2253,6 +2318,8 @@ class VotingSystem {
         return;
       }
       renderTree(state.tree);
+      markStepDiffs(state.tree, state.summary || {});
+      previousStepTree = state.tree;
       fitToScreen();
     }
 
@@ -2362,13 +2429,38 @@ class VotingSystem {
         return "Built from actions in this currently running CLI session.";
     }
 
-    std::string build_visualization_state_for_prefix_unlocked(
-        size_t leaf_count,
-        const std::string& step_label) const
+    std::string build_visualization_state_for_ballots_unlocked(
+        const std::vector<Ballot>& ballot_snapshot,
+        const std::string& step_label,
+        const std::string& focus_receipt_id = "") const
     {
         std::ostringstream out;
-        if (leaf_count == 0 || leaf_count > ballots_.size()) {
-            out << "{\"tree\":null,\"summary\":{\"stepLabel\":\"" << json_escape(step_label) << "\"}}";
+        if (ballot_snapshot.empty()) {
+            out << "{";
+            out << "\"tree\":null,";
+            out << "\"summary\":{"
+                << "\"sourceLabel\":\"" << json_escape(source_label_unlocked()) << "\","
+                << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\","
+                << "\"treeBuilt\":false,"
+                << "\"registeredVoters\":" << registry_.voter_count() << ","
+                << "\"ballotCount\":0,"
+                << "\"validBallots\":0,"
+                << "\"invalidBallots\":0,"
+                << "\"stepLabel\":\"" << json_escape(step_label) << "\","
+                << "\"focusReceiptId\":\"" << json_escape(focus_receipt_id) << "\","
+                << "\"candidates\":[],"
+                << "\"receipts\":[],"
+                << "\"registry\":[";
+            bool first = true;
+            for (const auto& entry : registry_.entries()) {
+                if (!first) out << ",";
+                first = false;
+                out << "{"
+                    << "\"voterId\":\"" << json_escape(entry.first) << "\","
+                    << "\"hasVoted\":" << (entry.second ? "true" : "false")
+                    << "}";
+            }
+            out << "]}}";
             return out.str();
         }
 
@@ -2382,14 +2474,13 @@ class VotingSystem {
         int valid_ballots = 0;
         int invalid_ballots = 0;
 
-        voter_ids.reserve(leaf_count);
-        candidates.reserve(leaf_count);
-        receipt_ids.reserve(leaf_count);
-        tampered_flags.reserve(leaf_count);
-        leaves.reserve(leaf_count);
+        voter_ids.reserve(ballot_snapshot.size());
+        candidates.reserve(ballot_snapshot.size());
+        receipt_ids.reserve(ballot_snapshot.size());
+        tampered_flags.reserve(ballot_snapshot.size());
+        leaves.reserve(ballot_snapshot.size());
 
-        for (size_t i = 0; i < leaf_count; ++i) {
-            const auto& b = ballots_[i];
+        for (const auto& b : ballot_snapshot) {
             voter_ids.push_back(b.voter_id);
             candidates.push_back(b.valid ? b.candidate : "NULLIFIED");
             receipt_ids.push_back(b.receipt_id);
@@ -2413,11 +2504,12 @@ class VotingSystem {
         summary << "\"sourceDetail\":\"" << json_escape(source_detail_unlocked()) << "\",";
         summary << "\"treeBuilt\":true,";
         summary << "\"registeredVoters\":" << registry_.voter_count() << ",";
-        summary << "\"ballotCount\":" << leaf_count << ",";
+        summary << "\"ballotCount\":" << ballot_snapshot.size() << ",";
         summary << "\"validBallots\":" << valid_ballots << ",";
         summary << "\"invalidBallots\":" << invalid_ballots << ",";
         summary << "\"merkleRoot\":\"" << json_escape(temp_tree.get_root()) << "\",";
         summary << "\"stepLabel\":\"" << json_escape(step_label) << "\",";
+        summary << "\"focusReceiptId\":\"" << json_escape(focus_receipt_id) << "\",";
         summary << "\"candidates\":[";
         bool first = true;
         for (const auto& kv : tally) {
@@ -2429,7 +2521,30 @@ class VotingSystem {
                     << "\"tamperedVotes\":" << tampered_tally[kv.first]
                     << "}";
         }
-        summary << "],\"receipts\":[],\"registry\":[]}";
+        summary << "],\"receipts\":[";
+        for (size_t i = 0; i < ballot_snapshot.size(); ++i) {
+            if (i) summary << ",";
+            const auto& b = ballot_snapshot[i];
+            summary << "{"
+                    << "\"receiptId\":\"" << json_escape(b.receipt_id) << "\","
+                    << "\"voterId\":\"" << json_escape(b.voter_id) << "\","
+                    << "\"candidate\":\"" << json_escape(b.candidate) << "\","
+                    << "\"preTamperCandidate\":\"" << json_escape(b.pre_tamper_candidate) << "\","
+                    << "\"valid\":" << (b.valid ? "true" : "false") << ","
+                    << "\"tampered\":" << (b.tampered ? "true" : "false")
+                    << "}";
+        }
+        summary << "],\"registry\":[";
+        bool first_voter = true;
+        for (const auto& entry : registry_.entries()) {
+            if (!first_voter) summary << ",";
+            first_voter = false;
+            summary << "{"
+                    << "\"voterId\":\"" << json_escape(entry.first) << "\","
+                    << "\"hasVoted\":" << (entry.second ? "true" : "false")
+                    << "}";
+        }
+        summary << "]}";
 
         out << "{";
         out << "\"tree\":" << temp_tree.export_visualization_json(
@@ -2437,6 +2552,58 @@ class VotingSystem {
         out << "\"summary\":" << summary.str();
         out << "}";
         return out.str();
+    }
+
+    std::string build_visualization_state_for_prefix_unlocked(
+        size_t leaf_count,
+        const std::string& step_label) const
+    {
+        if (leaf_count == 0 || leaf_count > ballots_.size()) {
+            return build_visualization_state_for_ballots_unlocked({}, step_label);
+        }
+        std::vector<Ballot> prefix(ballots_.begin(), ballots_.begin() + static_cast<std::ptrdiff_t>(leaf_count));
+        return build_visualization_state_for_ballots_unlocked(prefix, step_label);
+    }
+
+    void rebuild_receipt_index_unlocked() {
+        registry_.clear_receipts();
+        for (size_t i = 0; i < ballots_.size(); ++i)
+            registry_.store_receipt(ballots_[i].receipt_id, static_cast<int>(i));
+    }
+
+    void rebuild_tree_from_ballots_unlocked() {
+        std::vector<std::string> leaves;
+        leaves.reserve(ballots_.size());
+        for (const auto& b : ballots_)
+            leaves.push_back(ballot_leaf_hash(b));
+
+        tree_.build(leaves);
+        last_built_root_ = tree_.get_root();
+        tree_built_ = tree_.is_built();
+    }
+
+    void queue_delete_animation_unlocked(
+        const std::vector<Ballot>& before_delete,
+        const std::string& deleted_receipt_id,
+        int deleted_index)
+    {
+        animation_steps_.clear();
+        animation_reason_ = "delete_rebuild";
+        animation_steps_.push_back(build_visualization_state_for_ballots_unlocked(
+            before_delete,
+            "Deleting leaf " + std::to_string(deleted_index + 1) + " of " + std::to_string(before_delete.size()),
+            deleted_receipt_id));
+        animation_steps_.push_back(build_visualization_state_for_ballots_unlocked(
+            ballots_,
+            "Rebuilding from " + std::to_string(ballots_.size()) + " remaining leaves"));
+        for (size_t i = 1; i <= ballots_.size(); ++i) {
+            std::vector<Ballot> prefix(ballots_.begin(), ballots_.begin() + static_cast<std::ptrdiff_t>(i));
+            animation_steps_.push_back(build_visualization_state_for_ballots_unlocked(
+                prefix,
+                "Rebuilding from " + std::to_string(ballots_.size()) + " remaining leaves: placed " +
+                std::to_string(i) + " of " + std::to_string(ballots_.size())));
+        }
+        ++animation_nonce_;
     }
 
     void queue_build_animation_unlocked(size_t final_leaf_count, const std::string& reason) {
@@ -3143,8 +3310,8 @@ public:
         ballots_[idx].pre_tamper_candidate.clear();
 
         // O(log n): sets sentinel hash on leaf node, walks up via parent pointers
-        tree_.delete_leaf(idx);
 
+        tree_.delete_leaf(idx);
         last_built_root_ = tree_.get_root();   // root has changed — update snapshot
 
         std::cout << "  | Sentinel  : " << short_h(MerkleTree::deleted_sentinel()) << "\n";
@@ -3160,10 +3327,11 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // Delete a ballot  --  O(log n) via tree_.delete_leaf()
+    // Delete a ballot  --  O(n) due to erase + receipt-index rebuild + tree rebuild
     //
-    // Similar to invalidate_ballot, but completely removes the vote AND
-    // unmarks the voter so they can vote again.
+    // Unlike invalidate_ballot(), this performs true deletion:
+    // the ballot disappears from ballots_, the receipt index is rebuilt,
+    // and the tree is rebuilt from the remaining real ballots only.
     // ------------------------------------------------------------------
     void delete_ballot(const std::string& receipt_id) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -3182,33 +3350,36 @@ public:
         }
 
         std::string old_root = tree_.get_root();
+        const std::vector<Ballot> ballots_before_delete = ballots_;
+        const std::string voter_id = ballots_[idx].voter_id;
+        const std::string candidate = ballots_[idx].candidate;
+        const std::string leaf_hash = ballots_[idx].to_hash();
 
         std::cout << "\n";
         std::cout << "  +====== BALLOT DELETION ====================================+\n";
         std::cout << "  | Receipt   : " << receipt_id                               << "\n";
-        std::cout << "  | Voter     : " << ballots_[idx].voter_id                   << "\n";
-        std::cout << "  | Candidate : " << ballots_[idx].candidate                  << "\n";
-        std::cout << "  | Leaf hash : " << short_h(ballots_[idx].to_hash())         << "\n";
+        std::cout << "  | Voter     : " << voter_id                                  << "\n";
+        std::cout << "  | Candidate : " << candidate                                 << "\n";
+        std::cout << "  | Leaf hash : " << short_h(leaf_hash)                        << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
         std::cout << "  | 1. Freeing voter to vote again...\n";
         
-        registry_.unmark_voted(ballots_[idx].voter_id);
-        ballots_[idx].valid     = false;
-        ballots_[idx].tampered  = false;
-        ballots_[idx].pre_tamper_candidate.clear();
+        registry_.unmark_voted(voter_id);
 
-        std::cout << "  | 2. Nullifying leaf and updating tree via parent ptrs...\n";
+        std::cout << "  | 2. Removing receipt lookup from the registry...\n";
+        registry_.remove_receipt(receipt_id);
+        std::cout << "  | 3. Erasing ballot from the real ballot list...\n";
+        ballots_.erase(ballots_.begin() + idx);
+        std::cout << "  | 4. Rebuilding receipt indexes and the Merkle tree...\n";
+        rebuild_receipt_index_unlocked();
+        rebuild_tree_from_ballots_unlocked();
+        queue_delete_animation_unlocked(ballots_before_delete, receipt_id, idx);
 
-        // O(log n): sets sentinel hash on leaf node, walks up via parent pointers
-        tree_.delete_leaf(idx);
-
-        last_built_root_ = tree_.get_root();   // root has changed — update snapshot
-
-        std::cout << "  | Sentinel  : " << short_h(MerkleTree::deleted_sentinel()) << "\n";
         std::cout << "  | Old root  : " << old_root                                << "\n";
-        std::cout << "  | New root  : " << last_built_root_                        << "\n";
+        std::cout << "  | New root  : " << (tree_built_ ? last_built_root_ : "(empty)") << "\n";
         std::cout << "  +-----------------------------------------------------------+\n";
-        std::cout << "  | [OK] Ballot deleted. The voter may now cast a new vote.\n";
+        std::cout << "  | [OK] Ballot deleted. The leaf disappeared and the tree shrank.\n";
+        std::cout << "  |      The voter may now cast a new vote.\n";
         std::cout << "  +===========================================================+\n\n";
 
         if (dataset_loaded_)

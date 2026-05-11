@@ -72,6 +72,14 @@ public:
         store_receipt_impl(receipt_id, ballot_index);
     }
 
+    void remove_receipt(const std::string& receipt_id) {
+        remove_receipt_impl(receipt_id);
+    }
+
+    void clear_receipts() {
+        clear_receipts_impl();
+    }
+
     // Retrieve the ballot index for a given receipt ID.
     // Returns -1 if the receipt ID is not found.
     // O(1) average — hash table lookup
@@ -94,5 +102,7 @@ private:
     void mark_voted_impl(const std::string& voter_id);
     void unmark_voted_impl(const std::string& voter_id);
     void store_receipt_impl(const std::string& receipt_id, int ballot_index);
+    void remove_receipt_impl(const std::string& receipt_id);
+    void clear_receipts_impl();
     int get_ballot_index_impl(const std::string& receipt_id) const;
 };
