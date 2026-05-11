@@ -460,6 +460,7 @@ std::string MMRSimulation::smt_verify_json_unlocked(const std::string& voter_id)
       << ",\"hasVoted\":" << (has_voted ? "true" : "false")
       << ",\"eligible\":" << (eligible ? "true" : "false")
       << ",\"proofOk\":" << (proof_ok ? "true" : "false")
+      << ",\"proofType\":\"" << (registered ? "membership" : "non-membership") << "\""
       << ",\"error\":\"" << (registered ? (has_voted ? "voter already voted" : "") : "voter not registered") << "\""
       << ",\"key\":" << key
       << ",\"keyBits\":\"" << key_bits << "\""
@@ -740,13 +741,52 @@ std::string MMRSimulation::verify_json(int leaf_index) const {
         o << ",\"root\":\"" << root << "\"";
         o << ",\"verified\":" << (verified ? "true" : "false");
         o << ",\"peakIdx\":" << proof.leaf_peak_idx;
-        // proof steps
+
+        std::string current = leaf_hash;
+
+        // Intra-peak proof steps: rebuild the peak root from the leaf upward.
         o << ",\"steps\":[";
         for (size_t i = 0; i < proof.intra_proof.size(); ++i) {
+            const std::string& sibling = proof.intra_proof[i].first;
+            const std::string& dir = proof.intra_proof[i].second;
+            const std::string before = current;
+            current = (dir == "R") ? sha256(current + sibling) : sha256(sibling + current);
             if (i) o << ",";
-            o << "{\"sibling\":\"" << proof.intra_proof[i].first << "\""
-              << ",\"dir\":\"" << proof.intra_proof[i].second << "\"}";
+            o << "{\"sibling\":\"" << sibling << "\""
+              << ",\"dir\":\"" << dir << "\""
+              << ",\"current\":\"" << before << "\""
+              << ",\"result\":\"" << current << "\"}";
         }
+
+        // Replace the proved peak with the reconstructed value, then bag peaks
+        // the same way get_root() does. The UI displays these comparisons too.
+        std::vector<std::string> proof_peaks = proof.peak_hashes;
+        if (proof.leaf_peak_idx >= 0 && proof.leaf_peak_idx < static_cast<int>(proof_peaks.size()))
+            proof_peaks[proof.leaf_peak_idx] = current;
+
+        std::vector<std::string> bag_left;
+        std::vector<std::string> bag_right;
+        std::vector<std::string> bag_result;
+        if (!proof_peaks.empty()) {
+            std::string bag_root = proof_peaks.back();
+            for (int i = static_cast<int>(proof_peaks.size()) - 2; i >= 0; --i) {
+                std::string left = proof_peaks[i];
+                std::string right = bag_root;
+                bag_root = sha256(left + right);
+                bag_left.push_back(left);
+                bag_right.push_back(right);
+                bag_result.push_back(bag_root);
+            }
+        }
+
+        o << "],\"bagSteps\":[";
+        for (size_t i = 0; i < bag_result.size(); ++i) {
+            if (i) o << ",";
+            o << "{\"left\":\"" << bag_left[i] << "\""
+              << ",\"right\":\"" << bag_right[i] << "\""
+              << ",\"result\":\"" << bag_result[i] << "\"}";
+        }
+
         o << "],\"peaks\":[";
         for (size_t i = 0; i < proof.peak_hashes.size(); ++i) {
             if (i) o << ",";

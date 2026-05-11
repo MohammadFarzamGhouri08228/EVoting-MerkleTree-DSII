@@ -53,8 +53,13 @@ void SparseMerkleTree::erase(uint64_t key) {
 std::vector<std::pair<std::string, std::string>> SparseMerkleTree::generate_proof(uint64_t key) const {
     std::vector<std::pair<std::string, std::string>> proof;
     if (!root_) {
-        // return proof of defaults
-        for (int i = 0; i < D_; ++i) proof.push_back({default_hash_[D_], "R"});
+        // Empty tree: every sibling is the default hash for that subtree level.
+        // Proof is stored bottom-up, so start at the leaf parent and move upward.
+        for (int level = D_ - 1; level >= 0; --level) {
+            bool go_right = bit_at(key, level);
+            std::string dir = go_right ? "L" : "R";
+            proof.push_back({default_hash_[level + 1], dir});
+        }
         return proof;
     }
 
@@ -64,15 +69,16 @@ std::vector<std::pair<std::string, std::string>> SparseMerkleTree::generate_proo
     for (int level = 0; level < D_; ++level) {
         stack.push_back(cur);
         bool go_right = bit_at(key, level);
-        cur = go_right ? cur->right : cur->left;
-        if (!cur) cur = nullptr;
+        cur = cur ? (go_right ? cur->right : cur->left) : nullptr;
     }
 
-    // Build proof bottom-up
+    // Build proof bottom-up. If the searched path has already entered an empty
+    // branch, the sibling at this height is the precomputed default hash for
+    // that sibling subtree, not always the empty leaf hash.
     for (int level = D_ - 1; level >= 0; --level) {
         const SMTNode* parent = stack[level];
         bool go_right = bit_at(key, level);
-        std::string sibling = parent ? child_hash(parent, !go_right) : default_hash_[D_];
+        std::string sibling = parent ? child_hash(parent, !go_right) : default_hash_[level + 1];
         std::string dir = go_right ? "L" : "R"; // if we went right, sibling is left => "L"
         proof.push_back({sibling, dir});
     }
