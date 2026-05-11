@@ -130,6 +130,7 @@ class MerkleTree {
         std::string kind = "internal";
         if (is_root) kind = "root";
         else if (is_deleted) kind = "deleted";
+        else if (is_duplicate_visual) kind = "duplicate";
         else if (is_leaf) kind = "leaf";
 
         std::string label;
@@ -164,19 +165,21 @@ class MerkleTree {
         }
 
         std::vector<std::string> children;
-        if (node->left) {
-            children.push_back(visualization_json_for(
-                node->left, level + 1, leaf_index_map,
-                voter_ids, candidates, receipt_ids, tampered_flags));
-        }
-        if (node->right) {
-            children.push_back(visualization_json_for(
-                node->right, level + 1, leaf_index_map,
-                voter_ids, candidates, receipt_ids, tampered_flags));
-        } else if (node->left) {
-            children.push_back(visualization_json_for(
-                node->left, level + 1, leaf_index_map,
-                voter_ids, candidates, receipt_ids, tampered_flags, true));
+        if (!is_duplicate_visual) {
+            if (node->left) {
+                children.push_back(visualization_json_for(
+                    node->left, level + 1, leaf_index_map,
+                    voter_ids, candidates, receipt_ids, tampered_flags));
+            }
+            if (node->right) {
+                children.push_back(visualization_json_for(
+                    node->right, level + 1, leaf_index_map,
+                    voter_ids, candidates, receipt_ids, tampered_flags));
+            } else if (node->left) {
+                children.push_back(visualization_json_for(
+                    node->left, level + 1, leaf_index_map,
+                    voter_ids, candidates, receipt_ids, tampered_flags, true));
+            }
         }
 
         if (!children.empty()) {

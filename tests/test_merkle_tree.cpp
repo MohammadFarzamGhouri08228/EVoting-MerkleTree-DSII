@@ -66,6 +66,31 @@ public:
     ~SuppressOutput() { std::cout.rdbuf(old_buf); }
 };
 
+static std::string expected_merkle_root(const std::vector<std::string>& leaves) {
+    if (leaves.empty()) return "";
+
+    std::vector<std::string> level = leaves;
+    while (level.size() > 1) {
+        std::vector<std::string> next;
+        next.reserve((level.size() + 1) / 2);
+        for (size_t i = 0; i < level.size(); i += 2) {
+            const std::string& left = level[i];
+            const std::string& right = (i + 1 < level.size()) ? level[i + 1] : level[i];
+            next.push_back(sha256(left + right));
+        }
+        level = std::move(next);
+    }
+    return level[0];
+}
+
+static std::vector<std::string> make_test_leaves(int count) {
+    std::vector<std::string> leaves;
+    leaves.reserve(count);
+    for (int i = 1; i <= count; ++i)
+        leaves.push_back("H" + std::to_string(i));
+    return leaves;
+}
+
 // 1. Build: Root hash is correctly computed for both even and odd leaf counts
 void test_build_even_and_odd() {
     MerkleTree tree_even;
@@ -88,6 +113,66 @@ void test_build_even_and_odd() {
     
     ASSERT_EQ(tree_odd.get_root(), expected_root_odd);
     ASSERT_EQ(tree_odd.leaf_count(), 3);
+}
+
+void test_build_cases_zero_to_eight_leaves() {
+    for (int count = 0; count <= 8; ++count) {
+        MerkleTree tree;
+        std::vector<std::string> leaves = make_test_leaves(count);
+        tree.build(leaves);
+
+        ASSERT_EQ(tree.get_root(), expected_merkle_root(leaves));
+        ASSERT_EQ(tree.leaf_count(), count);
+
+        if (count == 0) {
+            ASSERT_FALSE(tree.is_built());
+        } else {
+            ASSERT_TRUE(tree.is_built());
+        }
+    }
+}
+
+void test_single_leaf_root_is_the_leaf_hash() {
+    MerkleTree tree;
+    tree.build({"OnlyLeafHash"});
+    ASSERT_EQ(tree.get_root(), "OnlyLeafHash");
+    ASSERT_EQ(tree.leaf_count(), 1);
+}
+
+void test_deterministic_roots_same_input_same_root() {
+    const std::vector<std::string> leaves = make_test_leaves(7);
+    MerkleTree a;
+    MerkleTree b;
+    a.build(leaves);
+    b.build(leaves);
+    ASSERT_EQ(a.get_root(), b.get_root());
+}
+
+void test_changing_one_leaf_changes_root() {
+    std::vector<std::string> leaves = make_test_leaves(5);
+    MerkleTree original;
+    MerkleTree changed;
+    original.build(leaves);
+    leaves[2] = "H3_changed";
+    changed.build(leaves);
+    ASSERT_TRUE(original.get_root() != changed.get_root());
+}
+
+void test_incremental_insertions_match_clean_rebuilds_up_to_eight() {
+    MerkleTree incremental;
+    std::vector<std::string> leaves;
+
+    for (int count = 1; count <= 8; ++count) {
+        const std::string next_leaf = "H" + std::to_string(count);
+        leaves.push_back(next_leaf);
+        incremental.insert(next_leaf);
+
+        MerkleTree rebuilt;
+        rebuilt.build(leaves);
+
+        ASSERT_EQ(incremental.get_root(), rebuilt.get_root());
+        ASSERT_EQ(incremental.leaf_count(), count);
+    }
 }
 
 // 2. Insert (O(log n)): Inserting a leaf into an odd-sized tree correctly computes the new root
@@ -283,6 +368,11 @@ int main() {
     std::cout << "========================================\n\n";
 
     RUN_TEST(test_build_even_and_odd);
+    RUN_TEST(test_build_cases_zero_to_eight_leaves);
+    RUN_TEST(test_single_leaf_root_is_the_leaf_hash);
+    RUN_TEST(test_deterministic_roots_same_input_same_root);
+    RUN_TEST(test_changing_one_leaf_changes_root);
+    RUN_TEST(test_incremental_insertions_match_clean_rebuilds_up_to_eight);
     RUN_TEST(test_insert_odd_sized_tree);
     RUN_TEST(test_update_tamper);
     RUN_TEST(test_delete_tombstone);
