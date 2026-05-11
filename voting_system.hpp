@@ -1101,6 +1101,30 @@ class VotingSystem {
       padding: 18px;
       height: calc(100vh - 86px);
     }
+    .status-card {
+      margin: 18px;
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--line);
+      box-shadow: 0 20px 40px rgba(19, 48, 56, 0.08);
+      color: var(--ink);
+    }
+    .status-card h2, .status-card p, .status-card code {
+      margin: 0;
+    }
+    .status-card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+    .status-card p {
+      color: var(--muted);
+      line-height: 1.6;
+      margin-top: 6px;
+    }
+    .status-card.hidden {
+      display: none;
+    }
     iframe {
       width: 100%;
       height: 100%;
@@ -1122,9 +1146,28 @@ class VotingSystem {
       <a class="button" href="http://127.0.0.1:9090/" target="_blank" rel="noreferrer">Open 9090 Directly</a>
     </div>
   </div>
-  <div class="frame-wrap">
-    <iframe src="http://127.0.0.1:9090/" title="MMR Simulation"></iframe>
+  <div id="mmrStatus" class="status-card hidden">
+    <h2>MMR Simulator Not Running</h2>
+    <p>The button is working, but the separate MMR backend is not currently running on <code>http://127.0.0.1:9090/</code>.</p>
+    <p>Start it with <code>.\mmr_sim.exe</code> and then refresh this page, or use the direct-open button after launching it.</p>
   </div>
+  <div class="frame-wrap">
+    <iframe id="mmrFrame" src="about:blank" title="MMR Simulation"></iframe>
+  </div>
+  <script>
+    const frame = document.getElementById("mmrFrame");
+    const status = document.getElementById("mmrStatus");
+    async function checkMMR() {
+      try {
+        await fetch("http://127.0.0.1:9090/", { mode: "no-cors", cache: "no-store" });
+        frame.src = "http://127.0.0.1:9090/";
+        status.classList.add("hidden");
+      } catch (error) {
+        status.classList.remove("hidden");
+      }
+    }
+    checkMMR();
+  </script>
 </body>
 </html>)HTML";
     }
