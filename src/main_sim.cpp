@@ -2,10 +2,10 @@
 // main_sim.cpp  —  Driver for the MMR Live Simulation server
 //
 // Compile (Windows / MinGW):
-//   g++ -std=c++17 -O2 -I. -Isim -o mmr_sim.exe main_sim.cpp src/mmr_simulation.cpp src/merkle_mountain_range.cpp -lws2_32
+//   g++ -std=c++17 -O2 -I. -Isim -o mmr_sim.exe src/main_sim.cpp src/mmr_simulation.cpp src/merkle_mountain_range.cpp src/sparse_merkle_tree.cpp src/sha256.cpp -lws2_32
 //
 // Compile (Linux / macOS):
-//   g++ -std=c++17 -O2 -I. -Isim -o mmr_sim main_sim.cpp src/mmr_simulation.cpp src/merkle_mountain_range.cpp -pthread
+//   g++ -std=c++17 -O2 -I. -Isim -o mmr_sim src/main_sim.cpp src/mmr_simulation.cpp src/merkle_mountain_range.cpp src/sparse_merkle_tree.cpp src/sha256.cpp -pthread
 //
 // Run:
 //   mmr_sim.exe          (Windows)
@@ -13,9 +13,11 @@
 //
 // Then open http://127.0.0.1:9090/ in your browser.
 // =============================================================================
-#include "sim/mmr_simulation.hpp"
+#include "header/mmr_simulation.hpp"
+#include <chrono>
 #include <iostream>
 #include <string>
+#include <thread>
 
 int main() {
     std::cout << "\n";
@@ -34,9 +36,11 @@ int main() {
 
     std::cout << "  [*] Simulation server is running.\n";
     std::cout << "  [*] Open your browser at:  http://127.0.0.1:" << port << "/\n";
-    std::cout << "  [*] Press Enter to stop the server...\n\n";
+    std::cout << "  [*] Keep this process running while using the browser page.\n\n";
 
-    std::cin.get();   // block until the user presses Enter
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::hours(24));
+    }
 
     sim.stop();
     std::cout << "  [*] Server stopped. Goodbye!\n";

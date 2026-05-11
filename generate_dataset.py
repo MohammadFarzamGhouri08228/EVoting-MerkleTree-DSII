@@ -20,5 +20,5 @@ def generate_dataset(filename):
             writer.writerow([voter_id, candidate])
 
 if __name__ == "__main__":
-    generate_dataset("dataset.csv")
-    print(f"Generated {NUM_VOTERS} synthetic votes in dataset.csv")
+    generate_dataset("data/dataset.csv")
+    print(f"Generated {NUM_VOTERS} synthetic votes in data/dataset.csv")

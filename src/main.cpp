@@ -2,8 +2,8 @@
 // main.cpp  —  E-VoteVerify+  CLI entry point
 //
 // Compile (Windows / Linux / macOS):
-//   g++ -std=c++17 -O2 -o evoteverify main.cpp -lws2_32   (Windows / MinGW)
-//   g++ -std=c++17 -O2 -o evoteverify main.cpp            (Linux / macOS)
+//   g++ -std=c++17 -O2 -I. -o evoteverify src/main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp src/sha256.cpp -lws2_32   (Windows / MinGW)
+//   g++ -std=c++17 -O2 -I. -o evoteverify src/main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp src/sha256.cpp            (Linux / macOS)
 //
 // Run:
 //   ./evoteverify        (Linux / macOS)
@@ -14,6 +14,8 @@
 #include <vector>
 #include <limits>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include "header/voting_system.hpp"
 
 // ---------------------------------------------------------------------------
@@ -104,10 +106,19 @@ static std::string prompt_receipt_selection(
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-int main() {
+int main(int argc, char* argv[]) {
+    VotingSystem vs;
+
+    if (argc > 1 && std::string(argv[1]) == "--web-home") {
+        if (!vs.export_web_visualization()) return 1;
+        std::cout << "  [*] Web homepage mode is running. Close this process to stop it.\n";
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::hours(24));
+        }
+    }
+
     print_banner();
 
-    VotingSystem vs;
     int choice = -1;
 
     while (true) {

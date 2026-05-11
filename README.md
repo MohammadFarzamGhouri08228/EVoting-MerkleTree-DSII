@@ -64,12 +64,13 @@ This demonstrates two fundamental data structures working together:
 ```
 EVoting-MerkleTree-DSII/
 │
-├── main.cpp              # CLI entry point — menu, user input, calls VotingSystem
-├── voting_system.hpp     # Central controller — orchestrates all workflows
+├── src/main.cpp          # CLI entry point — menu, user input, calls VotingSystem
+├── header/voting_system.hpp # Central controller — orchestrates all workflows
 ├── merkle_tree.hpp       # Merkle Tree: build, proof, verify, visualize
 ├── voter_registry.hpp    # Hash table layer: voter storage, receipt-to-index map
 ├── ballot.hpp            # Ballot struct: fields, canonical string, SHA-256 hash
-├── sha256.hpp            # Self-contained SHA-256 (no external libraries)
+├── header/sha256.hpp     # SHA-256 interface
+├── src/sha256.cpp        # Self-contained SHA-256 implementation
 │
 ├── votingsystem.py       # Legacy Python reference (original repo, superseded)
 ├── requirements.txt      # Python deps for legacy file only
@@ -94,7 +95,7 @@ EVoting-MerkleTree-DSII/
 ### Compile
 
 ```bash
-g++ -std=c++17 -O2 -I. -o evoteverify.exe main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -lws2_32
+g++ -std=c++17 -O2 -I. -o evoteverify.exe src/main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp src/sha256.cpp -lws2_32
 ```
 
 Windows note:
@@ -102,12 +103,12 @@ If you are using MinGW/MSYS2, `-lws2_32` is required because the live visualizat
 
 Linux / macOS:
 ```bash
-g++ -std=c++17 -O2 -I. -o evoteverify main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -pthread
+g++ -std=c++17 -O2 -I. -o evoteverify src/main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp src/sha256.cpp -pthread
 ```
 
 With MSVC:
 ```bash
-cl /std:c++17 /EHsc /O2 /I. /Fe:evoteverify.exe main.cpp src\\ballot.cpp src\\voter_registry.cpp src\\merkle_tree.cpp src\\live_visualization_server.cpp ws2_32.lib
+cl /std:c++17 /EHsc /O2 /I. /Fe:evoteverify.exe src\\main.cpp src\\ballot.cpp src\\voter_registry.cpp src\\merkle_tree.cpp src\\live_visualization_server.cpp src\\sha256.cpp ws2_32.lib
 ```
 
 ### Run
@@ -145,7 +146,7 @@ Important:
 This runs a hardcoded, perfectly timed scenario designed for a live viva. It demonstrates all core DSII concepts (Hash Table lookups, Merkle Tree construction, O(log n) proofs, and tamper detection) without requiring any manual typing.
 
 ```bash
-g++ -std=c++17 -O2 -I. -o demo.exe src/demo.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -lws2_32
+g++ -std=c++17 -O2 -I. -o demo.exe src/demo.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp src/sha256.cpp -lws2_32
 ./demo.exe
 ```
 
@@ -282,10 +283,10 @@ The project is divided into **5 phases** across **3 team members**.
 
 | Task | Status |
 |---|---|
-| `voting_system.hpp` — `VotingSystem` class wiring all modules | Done |
+| `header/voting_system.hpp` — `VotingSystem` class wiring all modules | Done |
 | `register_voter()`, `cast_vote()`, `build_tree()` methods | Done |
 | `verify_vote()`, `tamper_vote()`, `display_summary()` methods | Done |
-| `main.cpp` — numbered menu, user input handling | Done |
+| `src/main.cpp` — numbered menu, user input handling | Done |
 | End-to-end testing of full workflow | Done |
 | Edge case handling (empty tree, bad receipt ID, etc.) | Done |
 

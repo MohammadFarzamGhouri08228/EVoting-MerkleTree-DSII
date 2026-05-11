@@ -64,7 +64,7 @@
         main {
             flex: 1;
             display: grid;
-            grid-template-columns: 280px 1fr 300px;
+            grid-template-columns: 240px minmax(0, 1fr) 240px;
             grid-template-rows: 1fr;
             overflow: hidden;
         }
@@ -135,6 +135,7 @@
             position: relative;
             background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
             overflow: hidden;
+            min-width: 0;
         }
         
         #viz-overlay {
@@ -147,7 +148,7 @@
 
         /* SVG Styles */
         .node circle { fill: var(--bg); stroke-width: 2px; }
-        .node text { font-family: monospace; font-size: 10px; fill: var(--text); text-anchor: middle; pointer-events: none; }
+        .node text { font-family: monospace; font-size: 9px; fill: var(--text); text-anchor: middle; pointer-events: none; }
         .link { fill: none; stroke: var(--border); stroke-width: 1.5px; }
         
         .node.leaf circle { stroke: var(--leaf); }
@@ -155,7 +156,11 @@
         .node.peak circle { stroke: var(--peak); fill: rgba(245, 158, 11, 0.1); }
         .node.tampered circle { stroke: var(--danger); fill: rgba(239, 68, 68, 0.2); }
         .node.highlight circle { stroke: var(--warning); stroke-width: 3px; fill: rgba(245, 158, 11, 0.3); }
+        .node.smt-voted circle { stroke: var(--danger); fill: rgba(239, 68, 68, 0.18); }
+        .node.smt-unvoted circle { stroke: var(--success); fill: rgba(16, 185, 129, 0.18); }
+        .node.smt-path circle { stroke: var(--warning); stroke-width: 4px; fill: rgba(245, 158, 11, 0.28); }
         .link.highlight { stroke: var(--warning); stroke-width: 3px; }
+        .link.smt-path { stroke: var(--warning); stroke-width: 3px; }
 
         /* Snapshot Gallery */
         .snapshot-card {
@@ -239,6 +244,91 @@
         .hidden { display: none !important; }
         .text-danger { color: var(--danger); }
         .text-success { color: var(--success); }
+        .proof-log {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: rgba(0,0,0,0.22);
+            font-family: monospace;
+            font-size: 0.78rem;
+            line-height: 1.6;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        #proof-panel {
+            position: absolute;
+            left: 1rem;
+            right: 1rem;
+            bottom: 1rem;
+            max-height: 170px;
+            margin: 0;
+            z-index: 8;
+            display: none;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+        }
+        .viz-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            pointer-events: auto;
+        }
+        .viz-tabs button {
+            width: auto;
+            margin: 0;
+            padding: 0.35rem 0.6rem;
+            font-size: 0.75rem;
+        }
+        .viz-tabs button.active { background: var(--primary); border-color: var(--primary); }
+
+        /* Node Tooltip */
+        #node-tooltip {
+            position: fixed;
+            pointer-events: none;
+            background: rgba(15, 23, 42, 0.97);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 0.85rem;
+            font-size: 0.78rem;
+            font-family: monospace;
+            color: var(--text);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            z-index: 200;
+            max-width: 620px;
+            display: none;
+            line-height: 1.6;
+        }
+        #node-tooltip .tt-title {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.8rem;
+            margin-bottom: 0.3rem;
+            color: var(--primary);
+        }
+        #node-tooltip .tt-row { display: flex; gap: 0.5rem; }
+        #node-tooltip .tt-label { color: var(--text-dim); min-width: 60px; }
+        #tt-hash { word-break: break-all; }
+
+        /* Registry count badge */
+        .reg-badge {
+            display: inline-block;
+            background: rgba(59,130,246,0.2);
+            border: 1px solid rgba(59,130,246,0.4);
+            border-radius: 999px;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.75rem;
+            font-family: monospace;
+            color: var(--primary);
+            margin-left: 0.4rem;
+            vertical-align: middle;
+        }
+
+        /* Reg-running pulse */
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(16,185,129,0.3); }
+            50%       { border-color: rgba(16,185,129,0.9); }
+        }
+        .btn-reg-running { animation: pulse-border 1s infinite; border-color: var(--success) !important; }
     </style>
 </head>
 <body>
@@ -255,7 +345,7 @@
             <div class="panel-content">
                 <div class="control-group">
                     <label>Dataset File</label>
-                    <input type="text" id="cfg-path" value="dataset.csv">
+                    <input type="text" id="cfg-path" value="data/dataset.csv">
                     <button id="btn-load">Load Dataset</button>
                 </div>
                 
@@ -267,16 +357,25 @@
                     <button id="btn-config" class="primary">Apply Config</button>
                 </div>
 
-                <div class="panel-header" style="margin: 1rem -1rem; border-top: 1px solid var(--border);">Controls</div>
+                <div class="panel-header" style="margin: 1rem -1rem; border-top: 1px solid var(--border);">Voter Registry <span class="reg-badge" id="badge-reg-count">0</span></div>
+
+                <div class="btn-grid" style="margin-bottom: 0.5rem;">
+                    <button id="btn-auto-register" class="success">⚡ Auto Register</button>
+                    <button id="btn-stop-register">■ Stop Register</button>
+                </div>
+                <button id="btn-register-modal" style="border-color: var(--primary); color: var(--primary); margin-bottom: 0.5rem;">+ Manual Register</button>
+                <button id="btn-registry-modal" style="margin-bottom: 1rem;">👁 View Registry</button>
+
+                <div class="panel-header" style="margin: 1rem -1rem; border-top: 1px solid var(--border);">Voting Controls</div>
                 
                 <div class="btn-grid">
                     <button id="btn-step">Step (1 Vote)</button>
-                    <button id="btn-run" class="success">Run Auto</button>
-                    <button id="btn-stop">Stop</button>
+                    <button id="btn-run" class="success">▶ Auto Vote</button>
+                    <button id="btn-stop">■ Stop</button>
                     <button id="btn-reset" class="danger">Reset</button>
                 </div>
 
-                <div style="margin-top: 1.5rem;">
+                <div style="margin-top: 1rem;">
                     <button id="btn-vote-modal" style="border-color: var(--primary); color: var(--primary);">+ Manual Vote</button>
                     <button id="btn-verify-modal">Audit / Verify Path</button>
                     <button id="btn-tamper-modal" class="danger">Inject Tamper (Leaf)</button>
@@ -289,8 +388,13 @@
             <div id="viz-overlay">
                 <div class="viz-stat">Root Hash: <span id="viz-root">...</span></div>
                 <div class="viz-stat">Peaks: <span id="viz-peaks">0</span></div>
+                <div class="viz-tabs">
+                    <button id="tab-mmr" class="active">MMR</button>
+                    <button id="tab-smt">Sparse Merkle</button>
+                </div>
             </div>
             <svg id="mmr-svg" width="100%" height="100%"></svg>
+            <div id="proof-panel" class="proof-log"></div>
         </section>
 
         <!-- Right Panel: Snapshot Gallery -->
@@ -313,6 +417,10 @@
             <div class="stat-label">Verified (Last Audit)</div>
             <div class="stat-value text-success" id="stat-verified">0</div>
         </div>
+        <div class="stat-box">
+            <div class="stat-label">Registered Voters</div>
+            <div class="stat-value" style="color: var(--primary);" id="stat-registered">0</div>
+        </div>
         <div style="width: 1px; height: 30px; background: var(--border); margin: 0 1rem;"></div>
         
         <div class="tally-container" id="tally-container">
@@ -320,8 +428,61 @@
         </div>
     </footer>
 
+    <!-- Node hover tooltip -->
+    <div id="node-tooltip">
+        <div class="tt-title" id="tt-type">Node</div>
+        <div class="tt-row"><span class="tt-label">Hash:</span><span id="tt-hash"></span></div>
+        <div class="tt-row"><span class="tt-label">Height:</span><span id="tt-height"></span></div>
+        <div id="tt-voter-row" class="tt-row"><span class="tt-label">Voter:</span><span id="tt-voter"></span></div>
+        <div id="tt-cand-row" class="tt-row"><span class="tt-label">Candidate:</span><span id="tt-cand"></span></div>
+        <div id="tt-path-row" class="tt-row"><span class="tt-label">Path:</span><span id="tt-path"></span></div>
+        <div id="tt-status-row" class="tt-row"><span class="tt-label">Status:</span><span id="tt-status"></span></div>
+    </div>
+
     <!-- Modals -->
     
+    <!-- Manual Register Modal -->
+    <div class="modal-overlay" id="modal-register">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Register Voter</div>
+                <button class="modal-close" onclick="closeModal('modal-register')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="control-group">
+                    <label>Voter ID</label>
+                    <input type="text" id="reg-voter-id" placeholder="e.g. VOTER-001">
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-dim);">This adds the voter to the registry. They will then be eligible to vote during auto-voting.</p>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal('modal-register')" style="width:auto;">Cancel</button>
+                <button id="btn-submit-register" class="primary" style="width:auto;">Register</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Registry Modal -->
+    <div class="modal-overlay" id="modal-registry">
+        <div class="modal large">
+            <div class="modal-header">
+                <div class="modal-title">Voter Registry</div>
+                <button class="modal-close" onclick="closeModal('modal-registry')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.875rem; color:var(--text-dim); margin-bottom:1rem;">
+                    Registered voters: <strong id="reg-total-count">0</strong>
+                </p>
+                <div style="max-height:450px; overflow-y:auto; border:1px solid var(--border); border-radius:4px;">
+                    <table id="registry-table">
+                        <thead><tr><th>#</th><th>Voter ID</th><th>Status</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Vote Modal -->
     <div class="modal-overlay" id="modal-vote">
         <div class="modal">
@@ -340,6 +501,7 @@
                         <!-- populated dynamically -->
                     </select>
                 </div>
+                <div id="vote-proof-area" class="proof-log hidden"></div>
             </div>
             <div class="modal-footer">
                 <button onclick="closeModal('modal-vote')" style="width: auto;">Cancel</button>
@@ -421,7 +583,13 @@
         let candidates = [];
         let pollingInterval = null;
         let lastLeafCount = -1;
+        let lastSmtRoot = "";
         let manualVoteIndex = 1;
+        let currentViz = "mmr";
+        let activeSmtPath = [];
+        let knownSmtNodeIds = new Set();
+        let knownSmtNodeHashes = new Map();
+        let smtRenderVersion = 0;
 
         // --- D3 Setup ---
         const svg = d3.select("#mmr-svg");
@@ -443,6 +611,10 @@
                 console.error("API Error on", endpoint, e);
                 return null;
             }
+        }
+
+        function shortHash(value, len = 16) {
+            return value && value.length > len ? value.substring(0, len) + "..." : (value || "");
         }
 
         // --- UI Updates ---
@@ -471,8 +643,20 @@
             // Stats
             document.getElementById('stat-total').textContent = state.leafCount;
             document.getElementById('stat-verified').textContent = state.verifiedCount;
-            document.getElementById('viz-root').textContent = state.root || "empty";
-            document.getElementById('viz-peaks').textContent = state.peakCount;
+            document.getElementById('stat-registered').textContent = state.registeredCount || 0;
+            document.getElementById('badge-reg-count').textContent = state.registeredCount || 0;
+            document.getElementById('viz-root').textContent = shortHash(currentViz === "smt" ? state.smtRoot : state.root) || "empty";
+            document.getElementById('viz-peaks').textContent = currentViz === "smt" ? (state.smtNodes || 0) : state.peakCount;
+
+            // Auto-register button pulse
+            const btnAutoReg = document.getElementById('btn-auto-register');
+            if (state.regRunning) {
+                btnAutoReg.classList.add('btn-reg-running');
+                btnAutoReg.textContent = '⚡ Registering…';
+            } else {
+                btnAutoReg.classList.remove('btn-reg-running');
+                btnAutoReg.textContent = '⚡ Auto Register';
+            }
 
             // Tally
             const tallyContainer = document.getElementById('tally-container');
@@ -487,7 +671,7 @@
             }
 
             // Fetch candidates list if needed
-            if (candidates.length === 0 && state.leafCount > 0) {
+            if (candidates.length === 0) {
                 const cands = await apiCall('/api/candidates');
                 if (cands) {
                     candidates = cands;
@@ -496,10 +680,11 @@
             }
 
             // Update Gallery and Viz if changed
-            if (state.leafCount !== lastLeafCount || state.tampered) {
+            if (state.leafCount !== lastLeafCount || state.smtRoot !== lastSmtRoot || state.tampered) {
                 updateGallery();
                 updateVisualization();
                 lastLeafCount = state.leafCount;
+                lastSmtRoot = state.smtRoot || "";
             }
         }
 
@@ -529,27 +714,106 @@
         }
 
         // --- D3 Visualization ---
+        const tooltip = document.getElementById('node-tooltip');
+
+        function showTooltip(event, d, leafMap) {
+            const isLeaf = !d.children;
+            const isPeak = d.depth === 0 && !!d.children;
+            const typeLabel = isPeak ? '⛰ Peak Node' : isLeaf ? '🍃 Leaf Node' : '🔵 Internal Node';
+            document.getElementById('tt-type').textContent = typeLabel;
+            document.getElementById('tt-hash').textContent = d.data.h;
+            document.getElementById('tt-height').textContent = d.data.ht;
+
+            const voterRow = document.getElementById('tt-voter-row');
+            const candRow  = document.getElementById('tt-cand-row');
+            const pathRow = document.getElementById('tt-path-row');
+            const statusRow = document.getElementById('tt-status-row');
+            pathRow.style.display = 'none';
+            statusRow.style.display = 'none';
+            if (isLeaf && leafMap && leafMap[d.data.h]) {
+                const lf = leafMap[d.data.h];
+                document.getElementById('tt-voter').textContent = lf.v;
+                document.getElementById('tt-cand').textContent  = lf.c;
+                voterRow.style.display = '';
+                candRow.style.display  = '';
+            } else {
+                voterRow.style.display = 'none';
+                candRow.style.display  = 'none';
+            }
+            tooltip.style.display = 'block';
+            moveTooltip(event);
+        }
+
+        function moveTooltip(event) {
+            const x = event.clientX + 14;
+            const y = event.clientY - 10;
+            tooltip.style.left = x + 'px';
+            tooltip.style.top  = y + 'px';
+        }
+
+        function showSmtTooltip(event, d, entryByHash) {
+            const entry = entryByHash[d.data.h];
+            document.getElementById('tt-type').textContent = d.children ? 'Sparse Internal Node' : 'Sparse Leaf Node';
+            document.getElementById('tt-hash').textContent = d.data.h;
+            document.getElementById('tt-height').textContent = `depth ${d.data.d}`;
+
+            const voterRow = document.getElementById('tt-voter-row');
+            const candRow  = document.getElementById('tt-cand-row');
+            const pathRow = document.getElementById('tt-path-row');
+            const statusRow = document.getElementById('tt-status-row');
+            candRow.style.display = 'none';
+            document.getElementById('tt-path').textContent = d.data.id || 'root';
+            pathRow.style.display = '';
+
+            if (entry) {
+                document.getElementById('tt-voter').textContent = entry.voter;
+                document.getElementById('tt-status').textContent = entry.hasVoted ? 'Registered, already voted' : 'Registered, not voted';
+                voterRow.style.display = '';
+                statusRow.style.display = '';
+            } else {
+                voterRow.style.display = 'none';
+                statusRow.style.display = 'none';
+            }
+
+            tooltip.style.display = 'block';
+            moveTooltip(event);
+        }
+
+        function hideTooltip() {
+            tooltip.style.display = 'none';
+        }
+
+        function smtNodeKey(d) {
+            return d.data.id || "root";
+        }
+
         async function updateVisualization() {
+            if (currentViz === "smt") {
+                await updateSparseVisualization(activeSmtPath);
+                return;
+            }
             const treeData = await apiCall('/api/tree');
             if (!treeData || !treeData.peaks || treeData.peaks.length === 0) {
                 svgGroup.selectAll("*").remove();
                 return;
             }
 
-            // We render a forest: each peak is a tree.
-            // We'll arrange them horizontally.
-            svgGroup.selectAll("*").remove(); // Simple full redraw for now
+            // Build hash → leaf metadata lookup
+            const leafMap = {};
+            if (treeData.leaves) {
+                treeData.leaves.forEach(lf => { leafMap[lf.h] = lf; });
+            }
+
+            svgGroup.selectAll("*").remove();
 
             const margin = {top: 40, right: 20, bottom: 40, left: 20};
             let currentX = margin.left;
-            const nodeRadius = 14;
+            const nodeRadius = 11;
 
-            // Render each peak
             for (let i = 0; i < treeData.peaks.length; i++) {
                 const peakData = treeData.peaks[i];
                 if (!peakData) continue;
 
-                // Create hierarchy
                 const root = d3.hierarchy(peakData, d => {
                     const children = [];
                     if (d.l) children.push(d.l);
@@ -557,28 +821,21 @@
                     return children.length ? children : null;
                 });
 
-                // Peak height dictates width requirement
-                const treeWidth = Math.pow(2, peakData.ht) * 40;
-                const treeHeight = peakData.ht * 60;
+                const treeWidth = Math.pow(2, peakData.ht) * 34;
+                const treeHeight = peakData.ht * 56;
 
                 const treeLayout = d3.tree().size([treeWidth, treeHeight]);
                 treeLayout(root);
 
-                // Shift the tree to currentX
                 const g = svgGroup.append("g")
                     .attr("transform", `translate(${currentX}, ${margin.top})`);
 
-                // Draw links
                 g.selectAll(".link")
                     .data(root.links())
                     .enter().append("path")
                     .attr("class", "link")
-                    .attr("d", d3.linkVertical()
-                        .x(d => d.x)
-                        .y(d => d.y)
-                    );
+                    .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y));
 
-                // Draw nodes
                 const node = g.selectAll(".node")
                     .data(root.descendants())
                     .enter().append("g")
@@ -589,16 +846,17 @@
                         else cls += "internal ";
                         return cls;
                     })
-                    .attr("transform", d => `translate(${d.x},${d.y})`);
+                    .attr("transform", d => `translate(${d.x},${d.y})`)
+                    .on("mouseover", (event, d) => showTooltip(event, d, leafMap))
+                    .on("mousemove", moveTooltip)
+                    .on("mouseleave", hideTooltip);
 
-                node.append("circle")
-                    .attr("r", nodeRadius);
-
+                node.append("circle").attr("r", nodeRadius);
                 node.append("text")
                     .attr("dy", "0.3em")
-                    .text(d => d.data.h.substring(0, 4) + "..");
+                    .text(d => (d.data.short || d.data.h).substring(0, 4) + "..");
 
-                currentX += treeWidth + 40; // spacing between peaks
+                currentX += treeWidth + 40;
             }
 
             // Auto-center (if it's not too wide, or just fit to screen)
@@ -610,7 +868,7 @@
             const cw = svgEl.clientWidth;
             const ch = svgEl.clientHeight;
 
-            const scale = Math.min(cw / fullWidth, ch / fullHeight, 1);
+            const scale = Math.min(cw / fullWidth, ch / fullHeight, 0.86);
             const tx = (cw - fullWidth * scale) / 2;
             const ty = (ch - fullHeight * scale) / 2 + margin.top;
 
@@ -619,9 +877,138 @@
         }
 
         function highlightProofPath(proof) {
-            // Highlighting is complex on full redraw, for a simple implementation
-            // we will just flash a message or re-fetch tree and color it.
-            // Given time constraints, we'll visually show it in the modal.
+            activeSmtPath = proof && proof.path ? proof.path : [];
+            currentViz = "smt";
+            document.getElementById('tab-mmr').classList.remove('active');
+            document.getElementById('tab-smt').classList.add('active');
+            updateSparseVisualization(activeSmtPath);
+        }
+
+        function rememberProofPath(proof) {
+            activeSmtPath = proof && proof.path ? proof.path : [];
+            if (currentViz === "smt") {
+                updateSparseVisualization(activeSmtPath);
+            }
+        }
+
+        function applyFitTransform(bounds, padding = 80, maxScale = 0.85) {
+            const svgEl = document.getElementById('mmr-svg');
+            const cw = svgEl.clientWidth;
+            const ch = svgEl.clientHeight;
+            const scale = Math.min(
+                (cw - padding) / Math.max(bounds.width, 1),
+                (ch - padding) / Math.max(bounds.height, 1),
+                maxScale
+            );
+            const tx = (cw - bounds.width * scale) / 2 - bounds.x * scale;
+            const ty = (ch - bounds.height * scale) / 2 - bounds.y * scale;
+            svg.transition().duration(450).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        }
+
+        async function updateSparseVisualization(pathIds = []) {
+            const data = await apiCall('/api/smt');
+            const renderVersion = ++smtRenderVersion;
+            const previousIds = knownSmtNodeIds;
+            const previousHashes = knownSmtNodeHashes;
+            svgGroup.selectAll("*").remove();
+            if (!data || !data.tree) {
+                knownSmtNodeIds = new Set();
+                knownSmtNodeHashes = new Map();
+                return;
+            }
+
+            const entryByHash = {};
+            (data.entries || []).forEach(e => { entryByHash[e.hash] = e; });
+            const pathSet = new Set(pathIds || []);
+
+            const root = d3.hierarchy(data.tree, d => {
+                const children = [];
+                if (d.l) children.push(d.l);
+                if (d.r) children.push(d.r);
+                return children.length ? children : null;
+            });
+
+            const svgEl = document.getElementById('mmr-svg');
+            const cw = svgEl.clientWidth;
+            const ch = svgEl.clientHeight;
+            const leaves = root.leaves().length || 1;
+            const maxDepth = d3.max(root.descendants(), d => d.depth) || 1;
+            const virtualWidth = Math.max(cw * 2.4, leaves * 34, 1600);
+            const virtualHeight = Math.max(ch * 1.35, maxDepth * 64, 760);
+            const layout = d3.tree().size([virtualWidth, virtualHeight]);
+            layout(root);
+
+            const g = svgGroup.append("g").attr("transform", "translate(80,70)");
+            const nodes = root.descendants();
+            const links = root.links();
+            const nextIds = new Set(nodes.map(smtNodeKey));
+            const nextHashes = new Map(nodes.map(d => [smtNodeKey(d), d.data.h]));
+            const revealDelay = d => {
+                const id = smtNodeKey(d);
+                const changed = previousHashes.get(id) && previousHashes.get(id) !== d.data.h;
+                if (previousIds.has(id) && !changed) return 0;
+                return Math.min(d.depth, 16) * 95;
+            };
+
+            g.selectAll(".link")
+                .data(links)
+                .enter().append("path")
+                .attr("class", d => `link ${pathSet.has(d.target.data.id) ? 'smt-path' : ''}`)
+                .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y))
+                .attr("opacity", d => previousIds.has(smtNodeKey(d.target)) ? 1 : 0)
+                .transition()
+                .delay(d => revealDelay(d.target))
+                .duration(260)
+                .attr("opacity", 1);
+
+            const node = g.selectAll(".node")
+                .data(nodes)
+                .enter().append("g")
+                .attr("class", d => {
+                    const entry = entryByHash[d.data.h];
+                    let cls = "node internal ";
+                    if (!d.children) cls = "node leaf ";
+                    if (entry) cls += entry.hasVoted ? "smt-voted " : "smt-unvoted ";
+                    if (pathSet.has(d.data.id)) cls += "smt-path ";
+                    return cls;
+                })
+                .attr("transform", d => `translate(${d.x},${d.y})`)
+                .attr("opacity", d => {
+                    const id = smtNodeKey(d);
+                    const changed = previousHashes.get(id) && previousHashes.get(id) !== d.data.h;
+                    return previousIds.has(id) && !changed ? 1 : 0;
+                })
+                .on("mouseover", (event, d) => showSmtTooltip(event, d, entryByHash))
+                .on("mousemove", moveTooltip)
+                .on("mouseleave", hideTooltip);
+
+            node.append("circle")
+                .attr("r", d => previousIds.has(smtNodeKey(d)) ? 10 : 2);
+            node.append("text")
+                .attr("dy", "0.3em")
+                .text(d => (d.data.short || d.data.h).substring(0, 4) + "..");
+
+            node.transition()
+                .delay(revealDelay)
+                .duration(280)
+                .attr("opacity", 1);
+
+            node.select("circle")
+                .transition()
+                .delay(revealDelay)
+                .duration(280)
+                .attr("r", 10)
+                .transition()
+                .duration(180)
+                .attr("r", d => pathSet.has(d.data.id) ? 12 : 10);
+
+            applyFitTransform(svgGroup.node().getBBox(), 110, 0.78);
+
+            setTimeout(() => {
+                if (renderVersion !== smtRenderVersion) return;
+                knownSmtNodeIds = nextIds;
+                knownSmtNodeHashes = nextHashes;
+            }, 1700);
         }
 
         // --- Event Listeners & Actions ---
@@ -634,17 +1021,23 @@
             const mv = document.getElementById('cfg-max').value || -1;
             const iv = document.getElementById('cfg-interval').value || 10;
             await apiCall(`/api/action?cmd=configure&votes=${mv}&interval=${iv}`);
+            knownSmtNodeIds = new Set();
+            knownSmtNodeHashes = new Map();
             updateDashboard();
         });
 
         document.getElementById('btn-load').addEventListener('click', async () => {
             const p = document.getElementById('cfg-path').value;
             await apiCall(`/api/action?cmd=load&path=${encodeURIComponent(p)}`);
+            knownSmtNodeIds = new Set();
+            knownSmtNodeHashes = new Map();
             updateDashboard();
         });
 
         document.getElementById('btn-step').addEventListener('click', async () => {
-            await apiCall('/api/action?cmd=step');
+            const res = await apiCall('/api/step_attempt');
+            if (res && res.verification) rememberProofPath(res.verification);
+            showVoteProof(res);
             updateDashboard();
         });
 
@@ -662,8 +1055,29 @@
             await apiCall('/api/action?cmd=reset');
             candidates = [];
             lastLeafCount = -1;
+            lastSmtRoot = "";
+            knownSmtNodeIds = new Set();
+            knownSmtNodeHashes = new Map();
+            activeSmtPath = [];
+            document.getElementById('proof-panel').style.display = 'none';
             manualVoteIndex = 1;
             updateDashboard();
+        });
+
+        document.getElementById('tab-mmr').addEventListener('click', () => {
+            currentViz = "mmr";
+            document.getElementById('tab-mmr').classList.add('active');
+            document.getElementById('tab-smt').classList.remove('active');
+            updateDashboard();
+            updateVisualization();
+        });
+
+        document.getElementById('tab-smt').addEventListener('click', () => {
+            currentViz = "smt";
+            document.getElementById('tab-mmr').classList.remove('active');
+            document.getElementById('tab-smt').classList.add('active');
+            updateDashboard();
+            updateVisualization();
         });
 
         // --- Modals ---
@@ -679,6 +1093,8 @@
         // Manual Vote
         document.getElementById('btn-vote-modal').addEventListener('click', () => {
             document.getElementById('manual-voter').value = `MANUAL-${String(manualVoteIndex).padStart(3, '0')}`;
+            document.getElementById('vote-proof-area').classList.add('hidden');
+            document.getElementById('vote-proof-area').innerHTML = '';
             openModal('modal-vote');
         });
 
@@ -686,11 +1102,42 @@
             const v = document.getElementById('manual-voter').value;
             const c = document.getElementById('manual-candidate').value;
             if(!v || !c) return;
-            await apiCall(`/api/action?cmd=vote&voter=${encodeURIComponent(v)}&candidate=${encodeURIComponent(c)}`);
-            manualVoteIndex++;
             closeModal('modal-vote');
+            const res = await apiCall(`/api/vote_attempt?voter=${encodeURIComponent(v)}&candidate=${encodeURIComponent(c)}`);
+            if (res && res.cast && res.verification) {
+                highlightProofPath(res.verification);
+            } else if (res && res.verification) {
+                rememberProofPath(res.verification);
+            }
+            showVoteProof(res);
+            if (res && res.cast) {
+                manualVoteIndex++;
+            }
             updateDashboard();
         });
+
+        function showVoteProof(res) {
+            const area = document.getElementById('proof-panel');
+            area.style.display = 'block';
+            if (!res || !res.verification) {
+                area.innerHTML = `<div class="text-danger">Could not contact the simulation server. Restart the dashboard and try again.</div>`;
+                return;
+            }
+            const v = res.verification;
+            const reason = res.error || v.error || "vote rejected";
+            const verdict = res.cast ? "VERIFIED - vote cast" : `REJECTED - ${reason}`;
+            const cls = res.cast ? "text-success" : "text-danger";
+            const rows = (v.steps || []).map((s, i) =>
+                `[${i + 1}] compare ${shortHash(s.current, 18)} with ${shortHash(s.sibling, 18)} (${s.dir}) => ${shortHash(s.result, 18)}`
+            ).join("<br>");
+            area.innerHTML = `
+                <div class="${cls}" style="font-weight:700; margin-bottom:0.5rem;">${verdict}</div>
+                <div>Voter: ${v.voter}</div>
+                <div>Key bits: ${v.keyBits}</div>
+                <div>Leaf: ${shortHash(v.leafHash, 22)} | Root: ${shortHash(v.root, 22)}</div>
+                <div style="margin-top:0.5rem;">${rows || "-"}</div>
+            `;
+        }
 
         // Tamper
         document.getElementById('btn-tamper-modal').addEventListener('click', async () => {
@@ -758,6 +1205,46 @@
                 document.getElementById('vrf-steps').innerHTML = '-';
             }
         };
+
+        // --- Voter Registry ---
+
+        // Auto Register
+        document.getElementById('btn-auto-register').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=auto_register');
+            updateDashboard();
+        });
+
+        // Stop Auto Register
+        document.getElementById('btn-stop-register').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=auto_register_stop');
+            updateDashboard();
+        });
+
+        // Manual Register Modal
+        document.getElementById('btn-register-modal').addEventListener('click', () => {
+            document.getElementById('reg-voter-id').value = '';
+            openModal('modal-register');
+        });
+
+        document.getElementById('btn-submit-register').addEventListener('click', async () => {
+            const vid = document.getElementById('reg-voter-id').value.trim();
+            if (!vid) return;
+            await apiCall(`/api/action?cmd=register&voter=${encodeURIComponent(vid)}`);
+            closeModal('modal-register');
+            updateDashboard();
+        });
+
+        // View Registry Modal
+        document.getElementById('btn-registry-modal').addEventListener('click', async () => {
+            const data = await apiCall('/api/registry');
+            if (!data) return;
+            document.getElementById('reg-total-count').textContent = data.count;
+            const tbody = document.querySelector('#registry-table tbody');
+            tbody.innerHTML = (data.voters || []).map((v, i) =>
+                `<tr><td>${i + 1}</td><td>${v.voter}</td><td>${v.hasVoted ? 'Voted' : 'Not voted'}</td></tr>`
+            ).join('');
+            openModal('modal-registry');
+        });
 
         // Init
         startPolling();

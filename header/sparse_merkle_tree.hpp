@@ -10,6 +10,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <algorithm>
+#include <cstdint>
 #include "header/sha256.hpp"
 
 struct SMTNode {
@@ -46,6 +47,7 @@ public:
     std::vector<std::pair<std::string, std::string>> generate_proof(uint64_t key) const;
     static bool verify_proof(const std::string& leaf_hash,const std::vector<std::pair<std::string, std::string>>& proof,const std::string& expected_root);
     std::string get_root() const { return root_ ? root_->hash : default_hash_[0]; }
+    const SMTNode* root() const { return root_; }
     int  depth()        const { return D_; }
     bool is_built()     const { return root_ != nullptr; }
     int  node_count()   const { return static_cast<int>(all_nodes_.size()); }
