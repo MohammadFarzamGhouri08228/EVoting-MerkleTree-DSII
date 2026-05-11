@@ -360,6 +360,7 @@ class VotingSystem {
     </aside>
     <main class="panel workspace">
       <div class="toolbar">
+        <button id="hubBtn" type="button">Back to Hub</button>
         <button id="fitBtn">Fit to Screen</button>
       </div>
       <svg id="chart"></svg>
@@ -558,6 +559,9 @@ class VotingSystem {
     }
 
     document.getElementById("fitBtn").addEventListener("click", fitToScreen);
+    document.getElementById("hubBtn").addEventListener("click", () => {
+      window.location.href = "/";
+    });
     window.addEventListener("resize", () => {
       svg.attr("viewBox", [0, 0, width(), height()]);
       fitToScreen();
@@ -567,6 +571,250 @@ class VotingSystem {
 </body>
 </html>)HTML";
         return html.str();
+    }
+
+    static std::string visualization_launcher_html_template() {
+        return R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualization Hub</title>
+  <style>
+    :root {
+      --bg: #f4efe3;
+      --ink: #163038;
+      --muted: #5c6f73;
+      --card: rgba(255, 252, 245, 0.92);
+      --line: rgba(22, 48, 56, 0.10);
+      --accent: #c78f2b;
+      --accent-2: #2f7a5f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fff2c7 0%, transparent 30%),
+        radial-gradient(circle at top right, #d7eaee 0%, transparent 28%),
+        linear-gradient(180deg, #f5efe2 0%, #edf4f2 100%);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .shell {
+      width: min(1100px, 100%);
+      display: grid;
+      gap: 18px;
+    }
+    .hero, .cards {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 20px 50px rgba(22, 48, 56, 0.10);
+      backdrop-filter: blur(10px);
+    }
+    .hero {
+      padding: 28px;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 5vw, 3rem);
+    }
+    .hero p {
+      margin: 0;
+      max-width: 700px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 1rem;
+    }
+    .cards {
+      padding: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+    .card {
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 240px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(22, 48, 56, 0.08);
+      color: var(--muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 1.45rem;
+    }
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      flex: 1;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 11px 16px;
+      text-decoration: none;
+      color: white;
+      font-weight: 600;
+      box-shadow: 0 10px 24px rgba(22, 48, 56, 0.15);
+    }
+    .button.primary { background: linear-gradient(135deg, var(--accent), #e2ae4c); }
+    .button.secondary { background: linear-gradient(135deg, var(--accent-2), #3c9a77); }
+    .hint {
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Voting Visualization Hub</h1>
+      <p>Use one shared frontend entry point for both visual tracks. Open the classic Merkle Tree explorer for the voting workflow, or jump into the separate Merkle Mountain Range simulation when you want the interval-audit demo.</p>
+    </section>
+    <section class="cards">
+      <article class="card">
+        <span class="chip">Current System</span>
+        <h2>Merkle Tree View</h2>
+        <p>Live view for the existing voting app. It reads the state from the running CLI session on this server, including votes, tampering, invalidation, and receipt-linked leaf metadata.</p>
+        <div class="actions">
+          <a class="button primary" href="/merkle">Open Merkle Tree</a>
+        </div>
+      </article>
+      <article class="card">
+        <span class="chip">Separate Demo</span>
+        <h2>MMR View</h2>
+        <p>Launchpad for the Merkle Mountain Range simulator. This keeps the MMR experience reachable from the same frontend while the backend remains separate for now.</p>
+        <div class="actions">
+          <a class="button secondary" href="/mmr">Open MMR View</a>
+          <a class="button secondary" href="http://127.0.0.1:9090/" target="_blank" rel="noreferrer">Open 9090 Directly</a>
+        </div>
+        <div class="hint">The MMR simulator must be running on port 9090 for the embedded view to load.</div>
+      </article>
+    </section>
+  </div>
+</body>
+</html>)HTML";
+    }
+
+    static std::string mmr_bridge_html_template() {
+        return R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MMR Visualization</title>
+  <style>
+    :root {
+      --bg: #eff4f1;
+      --ink: #133038;
+      --muted: #5c6f73;
+      --panel: rgba(255, 252, 245, 0.92);
+      --line: rgba(19, 48, 56, 0.10);
+      --accent: #2f7a5f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #d8eee2 0%, transparent 28%),
+        radial-gradient(circle at top right, #fff2c7 0%, transparent 22%),
+        linear-gradient(180deg, #eef4f2 0%, #f6f1e4 100%);
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 12px 30px rgba(19, 48, 56, 0.08);
+    }
+    .title h1, .title p { margin: 0; }
+    .title p {
+      color: var(--muted);
+      margin-top: 4px;
+      font-size: 0.94rem;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 10px 14px;
+      text-decoration: none;
+      color: white;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--accent), #3f9a79);
+      box-shadow: 0 10px 22px rgba(19, 48, 56, 0.14);
+    }
+    .frame-wrap {
+      padding: 18px;
+      height: calc(100vh - 86px);
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: white;
+      box-shadow: 0 20px 40px rgba(19, 48, 56, 0.08);
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title">
+      <h1>MMR Visualization</h1>
+      <p>This page embeds the separate MMR simulator so both demos stay reachable from the same frontend hub.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="/">Back to Hub</a>
+      <a class="button" href="http://127.0.0.1:9090/" target="_blank" rel="noreferrer">Open 9090 Directly</a>
+    </div>
+  </div>
+  <div class="frame-wrap">
+    <iframe src="http://127.0.0.1:9090/" title="MMR Simulation"></iframe>
+  </div>
+</body>
+</html>)HTML";
     }
 
     static std::string live_visualization_html_template() {
@@ -1700,20 +1948,24 @@ public:
         }
 
         try {
-            const std::string html = live_visualization_html_template();
+            const std::string merkle_html = live_visualization_html_template();
+            const std::string launcher_html = visualization_launcher_html_template();
+            const std::string mmr_html = mmr_bridge_html_template();
             if (!vis_server_.is_running()) {
                 std::cout << "  [*] Starting local visualization server...\n";
                 const bool started = vis_server_.start(
-                    html,
+                    merkle_html,
                     [this]() { return this->visualization_state_json(); },
+                    launcher_html,
+                    mmr_html,
                     8080);
                 if (!started) {
                     std::cout << "  [!] Failed to start local visualization server.\n";
                     return false;
                 }
-                std::cout << "  [+] Live server running at " << vis_server_.url() << "\n";
+                std::cout << "  [+] Visualization hub running at " << vis_server_.url() << "\n";
             } else {
-                std::cout << "  [*] Live server already running at " << vis_server_.url() << "\n";
+                std::cout << "  [*] Visualization hub already running at " << vis_server_.url() << "\n";
             }
 
             std::cout << "  [*] Opening in your default web browser...\n";

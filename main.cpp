@@ -35,7 +35,7 @@ static void print_menu() {
     std::cout << "  |  2.  Cast vote                                              |\n";
     std::cout << "  |  3.  Build Merkle Tree                                      |\n";
     std::cout << "  |  4.  Display Merkle Tree (ASCII terminal view)              |\n";
-    std::cout << "  |  5.  Open Live Interactive Web Visualization                |\n";
+    std::cout << "  |  5.  Open Visualization Hub (Merkle + MMR)                  |\n";
     std::cout << "  |  6.  Verify vote  (simple walkthrough)                      |\n";
     std::cout << "  |  7.  Tamper with a ballot  (tamper-detection demo)          |\n";
     std::cout << "  |  8.  Invalidate a ballot   (delete_leaf demo)               |\n";

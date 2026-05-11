@@ -23,8 +23,10 @@ public:
     LiveVisualizationServer() = default;
     ~LiveVisualizationServer() { stop(); }
 
-    bool start(const std::string& page_html,
+    bool start(const std::string& merkle_page_html,
                StateProvider state_provider,
+               const std::string& launcher_page_html = "",
+               const std::string& mmr_page_html = "",
                int preferred_port = 8080);
     void stop();
     bool is_running() const { return running_.load(); }
@@ -35,7 +37,9 @@ private:
     int    port_ = 0;
     std::thread server_thread_;
     std::atomic<bool> running_ = false;
-    std::string page_html_;
+    std::string merkle_page_html_;
+    std::string launcher_page_html_;
+    std::string mmr_page_html_;
     StateProvider state_provider_ = nullptr;
 
     static bool init_sockets();

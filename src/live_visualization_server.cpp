@@ -105,7 +105,18 @@ void LiveVisualizationServer::handle_client(Socket client) {
 
     std::string response;
     if (path == "/" || path == "/index.html") {
-        response = http_response("200 OK", "text/html", page_html_);
+        const std::string& page = launcher_page_html_.empty()
+            ? merkle_page_html_
+            : launcher_page_html_;
+        response = http_response("200 OK", "text/html", page);
+    } else if (path == "/merkle") {
+        response = http_response("200 OK", "text/html", merkle_page_html_);
+    } else if (path == "/mmr") {
+        const std::string& page = mmr_page_html_.empty()
+            ? not_found_body()
+            : mmr_page_html_;
+        response = http_response(mmr_page_html_.empty() ? "404 Not Found" : "200 OK",
+                                 "text/html", page);
     } else if (path == "/api/state") {
         response = http_response("200 OK", "application/json",
                                  state_provider_ ? state_provider_() : "{}");
@@ -134,11 +145,15 @@ void LiveVisualizationServer::serve_loop() {
     }
 }
 
-bool LiveVisualizationServer::start(const std::string& page_html,
+bool LiveVisualizationServer::start(const std::string& merkle_page_html,
                StateProvider state_provider,
+               const std::string& launcher_page_html,
+               const std::string& mmr_page_html,
                int preferred_port) {
     if (running_) return true;
-    page_html_ = page_html;
+    merkle_page_html_ = merkle_page_html;
+    launcher_page_html_ = launcher_page_html;
+    mmr_page_html_ = mmr_page_html;
     state_provider_ = std::move(state_provider);
 
     if (!bind_and_listen(preferred_port))
