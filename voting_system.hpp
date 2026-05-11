@@ -1127,120 +1127,308 @@ class VotingSystem {
     }
 
     static std::string live_visualization_html_template() {
-        std::ostringstream html;
-        html << R"HTML(<!DOCTYPE html>
+        return R"HTML(<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Merkle Tree Visualization</title>
+  <title>Merkle Tree Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <style>
     :root {
-      --bg: #f6f3ea;
-      --panel: rgba(255, 252, 245, 0.9);
-      --ink: #132a2f;
-      --muted: #5b6c70;
-      --edge: #a8b6b2;
-      --root: #d9a404;
-      --internal: #7ca6b1;
-      --leaf: #2d8f5a;
-      --deleted: #c84b3f;
-      --tampered: #f28c28;
+      --bg: #f4efe4;
+      --panel: rgba(255, 252, 246, 0.88);
+      --panel-strong: rgba(255,255,255,0.78);
+      --ink: #18373f;
+      --muted: #667b80;
+      --line: rgba(24, 55, 63, 0.09);
+      --edge: #aabbb7;
+      --root: #d49b22;
+      --internal: #7399a6;
+      --leaf: #2e8a63;
+      --deleted: #c75b4e;
+      --tampered: #dc8a2d;
+      --shadow: 0 24px 60px rgba(24, 55, 63, 0.10);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, #fff4cd 0%, transparent 28%),
-        radial-gradient(circle at top right, #dceef0 0%, transparent 24%),
-        linear-gradient(180deg, #f3efe4 0%, #eef4f3 100%);
+        radial-gradient(circle at top left, #fff2c9 0%, transparent 25%),
+        radial-gradient(circle at top right, #d8ecee 0%, transparent 22%),
+        linear-gradient(180deg, #f5efe3 0%, #edf4f2 100%);
       min-height: 100vh;
     }
     .shell {
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 22px;
       display: grid;
-      grid-template-columns: minmax(260px, 320px) 1fr;
-      gap: 18px;
-      padding: 18px;
+      grid-template-columns: minmax(380px, 460px) minmax(0, 1fr);
+      gap: 22px;
       min-height: 100vh;
     }
     .panel {
       background: var(--panel);
-      border: 1px solid rgba(19, 42, 47, 0.08);
-      border-radius: 18px;
-      box-shadow: 0 18px 45px rgba(19, 42, 47, 0.08);
-      backdrop-filter: blur(10px);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
     }
     .sidebar {
-      padding: 20px;
+      padding: 22px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 18px;
       overflow-y: auto;
     }
+    .hero-card, .section-card {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+    }
+    .hero-card {
+      padding: 22px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,246,227,0.82)),
+        linear-gradient(160deg, rgba(212,155,34,0.10), rgba(46,138,99,0.06));
+    }
+    .hero-top, .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .hero-top { margin-bottom: 12px; align-items: center; }
     h1, h2, p { margin: 0; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-    .stat {
+    h1 {
+      font-size: clamp(1.8rem, 3vw, 2.35rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+    h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+    .hero-copy, .helper-copy, .section-note {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .hero-copy { font-size: 0.95rem; }
+    .hero-badge, .status-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .hero-badge {
+      padding: 8px 12px;
+      background: rgba(24,55,63,0.08);
+      font-size: 0.76rem;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+    }
+    .section-card {
+      padding: 18px;
+    }
+    .section-head { margin-bottom: 14px; }
+    .section-note { font-size: 0.82rem; }
+    .helper-copy {
+      padding: 14px 16px;
+      background: rgba(24,55,63,0.045);
+      border-radius: 18px;
+      font-size: 0.9rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+    }
+    .stat-label {
+      color: var(--muted);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+    }
+    .stat-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .candidate-list {
+      display: grid;
+      gap: 12px;
+    }
+    .candidate-row {
       display: grid;
       grid-template-columns: 1fr auto;
+      align-items: center;
       gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid rgba(19, 42, 47, 0.08);
-      font-size: 0.95rem;
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.8);
+      border: 1px solid var(--line);
+    }
+    .candidate-row strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+    .candidate-row span {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    .badge {
+      min-width: 48px;
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #183840, #224c55);
+      color: white;
+      font-weight: 800;
+      font-size: 1rem;
+      box-shadow: 0 10px 24px rgba(24,55,63,0.16);
+    }
+    .action-form {
+      display: grid;
+      gap: 14px;
+    }
+    .action-group {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line);
+    }
+    .action-group-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .action-stack {
+      display: grid;
+      gap: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .field label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid rgba(24,55,63,0.12);
+      border-radius: 16px;
+      padding: 11px 13px;
+      background: rgba(255,255,255,0.94);
+      color: var(--ink);
+      font: inherit;
+    }
+    .field textarea {
+      min-height: 150px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .receipt-actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    button {
+      border: 0;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #183840, #224c55);
+      color: white;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 12px 26px rgba(24,55,63,0.14);
+      transition: transform 140ms ease, filter 140ms ease;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .action-btn.alt { background: linear-gradient(135deg, #2d8a63, #3da176); }
+    .action-btn.warn { background: linear-gradient(135deg, #c75b4e, #de786b); }
+    .table-shell {
+      overflow: auto;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.76);
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    .data-table th, .data-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(24,55,63,0.07);
+      vertical-align: top;
+    }
+    .data-table th {
+      color: var(--muted);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+      background: rgba(24,55,63,0.04);
+    }
+    .status-pill {
+      padding: 5px 10px;
+      background: rgba(24,55,63,0.08);
+      font-size: 0.74rem;
+      white-space: nowrap;
+    }
+    .legend-grid {
+      display: grid;
+      gap: 10px;
     }
     .legend-item {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-top: 10px;
       color: var(--muted);
       font-size: 0.92rem;
-    }
-    .helper-copy {
-      color: var(--muted);
-      font-size: 0.92rem;
-      line-height: 1.5;
-      padding: 12px 14px;
-      background: rgba(19, 42, 47, 0.04);
-      border-radius: 14px;
-    }
-    .candidate-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .candidate-row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: center;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.62);
-      border: 1px solid rgba(19, 42, 47, 0.08);
-    }
-    .candidate-row strong {
-      display: block;
-      font-size: 0.96rem;
-    }
-    .candidate-row span {
-      color: var(--muted);
-      font-size: 0.85rem;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 34px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #17343b;
-      color: white;
-      font-weight: 600;
-      font-size: 0.88rem;
     }
     .swatch {
       width: 14px;
@@ -1253,6 +1441,22 @@ class VotingSystem {
       position: relative;
       overflow: hidden;
       min-height: 78vh;
+      background:
+        radial-gradient(circle at 8% 10%, rgba(212,155,34,0.08), transparent 18%),
+        radial-gradient(circle at 100% 0%, rgba(46,138,99,0.10), transparent 22%),
+        linear-gradient(180deg, rgba(255,255,255,0.74), rgba(246,251,249,0.86));
+    }
+    .workspace::before {
+      content: "Tree Canvas";
+      position: absolute;
+      left: 22px;
+      top: 18px;
+      z-index: 2;
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-weight: 700;
     }
     #chart {
       width: 100%;
@@ -1260,7 +1464,7 @@ class VotingSystem {
       min-height: 78vh;
     }
     .node-card {
-      fill: rgba(255,255,255,0.94);
+      fill: rgba(255,255,255,0.95);
       stroke-width: 2.5px;
       rx: 14px;
       ry: 14px;
@@ -1287,8 +1491,8 @@ class VotingSystem {
       transition: opacity 140ms ease, transform 140ms ease;
       max-width: 320px;
       padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(19, 42, 47, 0.94);
+      border-radius: 16px;
+      background: rgba(24,55,63,0.95);
       color: #f9faf7;
       box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
       font-size: 0.9rem;
@@ -1297,25 +1501,17 @@ class VotingSystem {
     .tooltip strong { color: #ffe28a; }
     .toolbar {
       position: absolute;
-      right: 16px;
-      top: 16px;
+      right: 18px;
+      top: 18px;
       display: flex;
       gap: 10px;
       z-index: 3;
     }
-    button {
-      border: 0;
-      border-radius: 999px;
-      background: #17343b;
-      color: white;
-      padding: 10px 14px;
-      font-size: 0.9rem;
-      cursor: pointer;
-      box-shadow: 0 8px 20px rgba(19, 42, 47, 0.16);
-    }
-    button:hover { background: #20454d; }
-    @media (max-width: 960px) {
+    @media (max-width: 1180px) {
       .shell { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .stats-grid, .action-grid, .button-grid, .receipt-actions { grid-template-columns: 1fr; }
       .workspace, #chart { min-height: 68vh; }
     }
   </style>
@@ -1323,7 +1519,7 @@ class VotingSystem {
 <body>
   <div class="shell">
     <aside class="panel sidebar">
-      <div class="hero-card">
+      <section class="hero-card">
         <div class="hero-top">
           <div>
             <h2>Voting Dashboard</h2>
@@ -1331,12 +1527,25 @@ class VotingSystem {
           </div>
           <div class="hero-badge">Live</div>
         </div>
-        <p class="hero-copy">Drive the full voting workflow from this page, inspect the live tree, and watch integrity changes update in real time as ballots are cast, verified, tampered with, invalidated, or deleted.</p>
-      </div>
-      <div class="section-card helper-copy">
-        The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
-      </div>
-      <div class="section-card">
+        <p class="hero-copy">Operate the voting workflow from one polished control surface, inspect the live Merkle structure, and track integrity shifts as ballots move through the system.</p>
+      </section>
+
+      <section class="section-card">
+        <div class="section-head">
+          <h2>Overview</h2>
+          <span class="section-note" id="rootHash">-</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Levels</div><div class="stat-value" id="levelCount">-</div><div class="stat-sub">Tree depth</div></div>
+          <div class="stat-card"><div class="stat-label">Leaf Nodes</div><div class="stat-value" id="leafCount">-</div><div class="stat-sub">Receipt-linked leaves</div></div>
+          <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value" id="registeredVoters">-</div><div class="stat-sub">Eligible voters</div></div>
+          <div class="stat-card"><div class="stat-label">Ballots</div><div class="stat-value" id="ballotCount">-</div><div class="stat-sub">Cast so far</div></div>
+          <div class="stat-card"><div class="stat-label">Valid</div><div class="stat-value" id="validBallots">-</div><div class="stat-sub">Counted in tally</div></div>
+          <div class="stat-card"><div class="stat-label">Invalidated</div><div class="stat-value" id="invalidBallots">-</div><div class="stat-sub">Removed from tally</div></div>
+        </div>
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
           <h2>Data Source</h2>
           <span class="section-note">Session provenance</span>
@@ -1345,116 +1554,99 @@ class VotingSystem {
           <strong id="sourceLabel">-</strong><br>
           <span id="sourceDetail">-</span>
         </div>
-      </div>
-      <div class="section-card">
-        <div class="section-head">
-          <h2>Overview</h2>
-          <span class="section-note" id="rootHash">-</span>
-        </div>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-label">Levels</div>
-            <div class="stat-value" id="levelCount">-</div>
-            <div class="stat-sub">Tree depth</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Leaf Nodes</div>
-            <div class="stat-value" id="leafCount">-</div>
-            <div class="stat-sub">Receipt-linked leaves</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Registered</div>
-            <div class="stat-value" id="registeredVoters">-</div>
-            <div class="stat-sub">Eligible voters</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Ballots</div>
-            <div class="stat-value" id="ballotCount">-</div>
-            <div class="stat-sub">Cast so far</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Valid</div>
-            <div class="stat-value" id="validBallots">-</div>
-            <div class="stat-sub">Counted in tally</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Invalidated</div>
-            <div class="stat-value" id="invalidBallots">-</div>
-            <div class="stat-sub">Removed from tally</div>
-          </div>
-        </div>
-      </div>
-      <div class="section-card">
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
           <h2>Candidates</h2>
           <span class="section-note">Current valid tally</span>
         </div>
         <div id="candidateList" class="candidate-list"></div>
-      </div>
-      <div class="section-card">
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
-          <h2>Actions</h2>
-          <span class="section-note">Frontend command center</span>
+          <h2>Action Console</h2>
+          <span class="section-note">Frontend workflow controls</span>
         </div>
         <div class="action-form">
-          <div class="action-grid">
-            <div class="field">
-              <label for="registerVoterId">Register Voter</label>
-              <input id="registerVoterId" placeholder="e.g. voter_51" />
-            </div>
-            <div class="field">
-              <label>&nbsp;</label>
-              <button class="action-btn" id="registerBtn" type="button">Register</button>
-            </div>
-          </div>
-          <div class="action-grid">
-            <div class="field">
-              <label for="voteVoterId">Cast Vote: Voter ID</label>
-              <input id="voteVoterId" placeholder="Registered voter ID" />
-            </div>
-            <div class="field">
-              <label for="voteCandidate">Candidate</label>
-              <select id="voteCandidate">
-                <option>Sam</option>
-                <option>Ali</option>
-                <option>Sarah</option>
-              </select>
+          <div class="action-group">
+            <div class="action-group-title">Onboarding</div>
+            <div class="action-grid">
+              <div class="field">
+                <label for="registerVoterId">Register Voter</label>
+                <input id="registerVoterId" placeholder="e.g. voter_51" />
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="action-btn" id="registerBtn" type="button">Register Voter</button>
+              </div>
             </div>
           </div>
-          <button class="action-btn alt" id="castVoteBtn" type="button">Cast Vote</button>
-          <div class="action-row">
-            <button class="action-btn" id="loadDatasetBtn" type="button">Load Sample Dataset</button>
-            <button class="action-btn" id="buildTreeBtn" type="button">Build Merkle Tree</button>
-            <button class="action-btn" id="showSummaryBtn" type="button">Show Summary</button>
-            <button class="action-btn" id="showRegistryBtn" type="button">Show Registry</button>
-          </div>
-          <div class="action-grid">
-            <div class="field">
-              <label for="receiptSelect">Receipt</label>
-              <select id="receiptSelect"></select>
+
+          <div class="action-group">
+            <div class="action-group-title">Ballot Casting</div>
+            <div class="action-grid">
+              <div class="field">
+                <label for="voteVoterId">Voter ID</label>
+                <input id="voteVoterId" placeholder="Registered voter ID" />
+              </div>
+              <div class="field">
+                <label for="voteCandidate">Candidate</label>
+                <select id="voteCandidate">
+                  <option>Sam</option>
+                  <option>Ali</option>
+                  <option>Sarah</option>
+                </select>
+              </div>
             </div>
-            <div class="field">
-              <label for="receiptCandidate">Replacement Candidate</label>
-              <select id="receiptCandidate">
-                <option>Sam</option>
-                <option>Ali</option>
-                <option>Sarah</option>
-              </select>
+            <button class="action-btn alt" id="castVoteBtn" type="button">Cast Vote</button>
+          </div>
+
+          <div class="action-group">
+            <div class="action-group-title">System Operations</div>
+            <div class="button-grid">
+              <button class="action-btn" id="loadDatasetBtn" type="button">Load Sample Dataset</button>
+              <button class="action-btn" id="buildTreeBtn" type="button">Build Merkle Tree</button>
+              <button class="action-btn" id="showSummaryBtn" type="button">Show Summary</button>
+              <button class="action-btn" id="showRegistryBtn" type="button">Show Registry</button>
             </div>
           </div>
-          <div class="action-row">
-            <button class="action-btn" id="verifyBtn" type="button">Verify</button>
-            <button class="action-btn warn" id="tamperBtn" type="button">Tamper</button>
-            <button class="action-btn" id="invalidateBtn" type="button">Invalidate</button>
-            <button class="action-btn warn" id="deleteBtn" type="button">Delete</button>
+
+          <div class="action-group">
+            <div class="action-group-title">Receipt Actions</div>
+            <div class="action-grid">
+              <div class="field">
+                <label for="receiptSelect">Receipt</label>
+                <select id="receiptSelect"></select>
+              </div>
+              <div class="field">
+                <label for="receiptCandidate">Replacement Candidate</label>
+                <select id="receiptCandidate">
+                  <option>Sam</option>
+                  <option>Ali</option>
+                  <option>Sarah</option>
+                </select>
+              </div>
+            </div>
+            <div class="receipt-actions">
+              <button class="action-btn" id="verifyBtn" type="button">Verify</button>
+              <button class="action-btn warn" id="tamperBtn" type="button">Tamper</button>
+              <button class="action-btn" id="invalidateBtn" type="button">Invalidate</button>
+              <button class="action-btn warn" id="deleteBtn" type="button">Delete</button>
+            </div>
           </div>
-          <div class="field">
-            <label for="actionOutput">Backend Output</label>
-            <textarea id="actionOutput" readonly placeholder="Action feedback from the voting workflow will appear here."></textarea>
+
+          <div class="action-group">
+            <div class="action-group-title">Backend Output</div>
+            <div class="field">
+              <textarea id="actionOutput" readonly placeholder="Action feedback from the voting workflow will appear here."></textarea>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="section-card">
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
           <h2>Receipts</h2>
           <span class="section-note">Ballot audit handles</span>
@@ -1467,8 +1659,9 @@ class VotingSystem {
             <tbody id="receiptTableBody"></tbody>
           </table>
         </div>
-      </div>
-      <div class="section-card">
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
           <h2>Registry</h2>
           <span class="section-note">Eligibility ledger</span>
@@ -1481,37 +1674,39 @@ class VotingSystem {
             <tbody id="registryTableBody"></tbody>
           </table>
         </div>
-      </div>
-      <div class="section-card helper-copy">
-        Live data comes from a lightweight local server started by option 5. The browser asks for a fresh JSON snapshot every second and redraws when the election state changes.
-      </div>
-      <div class="section-card">
+      </section>
+
+      <section class="section-card">
         <div class="section-head">
           <h2>Legend</h2>
-          <span class="section-note">Node color semantics</span>
+          <span class="section-note">Node semantics</span>
         </div>
-        <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
-        <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
-        <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
-        <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
-        <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
-      </div>
+        <div class="legend-grid">
+          <div class="legend-item"><span class="swatch" style="background:#fff7d6;border-color:var(--root);"></span><span>Root node</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#edf5f7;border-color:var(--internal);"></span><span>Internal node</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#e8f7ee;border-color:var(--leaf);"></span><span>Valid ballot leaf</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#f6e3e1;border-color:var(--deleted);"></span><span>Invalidated or deleted leaf</span></div>
+          <div class="legend-item"><span class="swatch" style="background:#fff0df;border-color:var(--tampered);"></span><span>Tampered ballot marker</span></div>
+        </div>
+      </section>
     </aside>
+
     <main class="panel workspace">
       <div class="toolbar">
-        <button id="fitBtn">Fit to Screen</button>
+        <button id="fitBtn" type="button">Fit to Screen</button>
       </div>
       <svg id="chart"></svg>
       <div id="tooltip" class="tooltip"></div>
     </main>
   </div>
+
   <script>
     if (typeof d3 === "undefined") {
       document.body.innerHTML = `
         <div style="padding:24px;font-family:Segoe UI,Tahoma,sans-serif;color:#132a2f;">
           <h2>Visualization Dependency Failed To Load</h2>
           <p>This page needs D3.js from jsDelivr, but your browser could not load it.</p>
-          <p>Try refreshing once, checking whether the network blocks <code>cdn.jsdelivr.net</code>, or use the ASCII tree view from option 4 for now.</p>
+          <p>Try refreshing once, or check whether <code>cdn.jsdelivr.net</code> is blocked on your network.</p>
         </div>`;
       throw new Error("D3 failed to load");
     }
@@ -1521,26 +1716,16 @@ class VotingSystem {
     const tooltip = d3.select("#tooltip");
     const width = () => workspace.clientWidth;
     const height = () => Math.max(workspace.clientHeight, 620);
-
     svg.attr("viewBox", [0, 0, width(), height()]);
 
     const zoomLayer = svg.append("g");
     let currentContent = null;
     let lastSignature = "";
-    let isApplyingClamp = false;
-    let latestState = null;
 
     const zoom = d3.zoom()
       .scaleExtent([0.35, 2.5])
       .on("zoom", event => {
-        if (isApplyingClamp) return;
-        const clamped = clampTransform(event.transform);
-        zoomLayer.attr("transform", clamped);
-        if (clamped.x !== event.transform.x || clamped.y !== event.transform.y || clamped.k !== event.transform.k) {
-          isApplyingClamp = true;
-          svg.call(zoom.transform, clamped);
-          isApplyingClamp = false;
-        }
+        zoomLayer.attr("transform", event.transform);
       });
 
     svg.call(zoom);
@@ -1564,19 +1749,14 @@ class VotingSystem {
     function attachTooltip(nodeSelection) {
       nodeSelection.on("mousemove", (event, d) => {
         const data = d.data;
-        const lines = [
-          `<strong>${data.name}</strong>`,
-          `Full hash: ${data.hash}`
-        ];
+        const lines = [`<strong>${data.name}</strong>`, `Full hash: ${data.hash}`];
         if (typeof data.leafIndex === "number") lines.push(`Leaf index: ${data.leafIndex}`);
         if (data.voterId) lines.push(`Voter ID: ${data.voterId}`);
         if (data.candidate) lines.push(`Candidate: ${data.candidate}`);
         if (data.receiptId) lines.push(`Receipt ID: ${data.receiptId}`);
         if (data.deleted) lines.push(`Status: This ballot was deleted or invalidated.`);
         else if (data.tampered) lines.push(`Status: This ballot is flagged as tampered.`);
-
-        tooltip
-          .html(lines.join("<br>"))
+        tooltip.html(lines.join("<br>"))
           .style("left", `${event.offsetX + 18}px`)
           .style("top", `${event.offsetY + 18}px`)
           .style("opacity", 1)
@@ -1590,10 +1770,9 @@ class VotingSystem {
       const treeData = state.tree;
       const summary = state.summary;
       const root = d3.hierarchy(treeData);
-      const sourceLabel = document.getElementById("sourceLabel");
-      const sourceDetail = document.getElementById("sourceDetail");
-      if (sourceLabel) sourceLabel.textContent = summary.sourceLabel || "-";
-      if (sourceDetail) sourceDetail.textContent = summary.sourceDetail || "-";
+
+      document.getElementById("sourceLabel").textContent = summary.sourceLabel || "-";
+      document.getElementById("sourceDetail").textContent = summary.sourceDetail || "-";
       document.getElementById("rootHash").textContent = treeData.shortHash || "-";
       document.getElementById("levelCount").textContent = String(root.height + 1);
       document.getElementById("leafCount").textContent = String(root.leaves().length);
@@ -1667,10 +1846,8 @@ class VotingSystem {
       treeLayout(root);
 
       const xExtent = d3.extent(root.descendants(), d => d.x);
-      const paddingX = 110;
-      const paddingY = 90;
-      const xOffset = paddingX - xExtent[0];
-      const yOffset = paddingY;
+      const xOffset = 110 - xExtent[0];
+      const yOffset = 90;
 
       const linkGen = d3.linkVertical()
         .x(d => d.x + xOffset)
@@ -1705,65 +1882,19 @@ class VotingSystem {
       attachTooltip(node);
     }
 
-    function clampTransform(transform) {
-      if (!currentContent) return transform;
-
-      const bounds = currentContent.node().getBBox();
-      const fullWidth = width();
-      const fullHeight = height();
-      const scale = transform.k;
-      const contentWidth = bounds.width * scale;
-      const contentHeight = bounds.height * scale;
-      const centerX = fullWidth / 2 - (bounds.x + bounds.width / 2) * scale;
-      const baseTop = 48 - bounds.y * scale;
-
-      let minX;
-      let maxX;
-      if (contentWidth < fullWidth - 240) {
-        minX = centerX - 90;
-        maxX = centerX + 90;
-      } else {
-        minX = fullWidth - 120 - (bounds.x + bounds.width) * scale;
-        maxX = 120 - bounds.x * scale;
-      }
-
-      let minY;
-      let maxY;
-      if (contentHeight < fullHeight - 180) {
-        minY = baseTop - 40;
-        maxY = baseTop + 120;
-      } else {
-        minY = fullHeight - 90 - (bounds.y + bounds.height) * scale;
-        maxY = 40 - bounds.y * scale;
-      }
-
-      return d3.zoomIdentity
-        .translate(
-          Math.max(minX, Math.min(maxX, transform.x)),
-          Math.max(minY, Math.min(maxY, transform.y))
-        )
-        .scale(scale);
-    }
-
     function fitToScreen() {
       if (!currentContent) return;
       const bounds = currentContent.node().getBBox();
-      const fullWidth = width();
-      const fullHeight = height();
-      const scale = Math.min(
-        1.1,
-        0.88 / Math.max(bounds.width / fullWidth, bounds.height / fullHeight)
-      );
-      const tx = (fullWidth - bounds.width * scale) / 2 - bounds.x * scale;
-      const ty = 50 - bounds.y * scale;
+      const scale = Math.min(1.08, 0.88 / Math.max(bounds.width / width(), bounds.height / height()));
+      const tx = (width() - bounds.width * scale) / 2 - bounds.x * scale;
+      const ty = 54 - bounds.y * scale;
       svg.transition().duration(350).call(
         zoom.transform,
-        clampTransform(d3.zoomIdentity.translate(tx, ty).scale(scale))
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
       );
     }
 
     function applyState(state) {
-      latestState = state;
       if (!state) return;
       if (state.summary) updateSummary(state);
       if (!state.tree) {
@@ -1847,7 +1978,6 @@ class VotingSystem {
   </script>
 </body>
 </html>)HTML";
-        return html.str();
     }
 
     // Returns the hash that should represent this ballot in the Merkle Tree.
