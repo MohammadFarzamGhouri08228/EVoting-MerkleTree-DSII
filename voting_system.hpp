@@ -1506,6 +1506,134 @@ class VotingSystem {
       line-height: 1.45;
     }
     .tooltip strong { color: #ffe28a; }
+    .proof-card {
+      position: absolute;
+      left: 22px;
+      bottom: 22px;
+      z-index: 4;
+      width: min(360px, calc(100% - 44px));
+      padding: 16px 18px;
+      border-radius: 20px;
+      background: rgba(24,55,63,0.92);
+      color: #f4f7f4;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.16);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .proof-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .proof-card h3, .proof-card p {
+      margin: 0;
+    }
+    .proof-card h3 {
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #d8e5e1;
+      margin-bottom: 8px;
+    }
+    .proof-line {
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: #f4f7f4;
+      word-break: break-word;
+    }
+    .proof-line strong {
+      color: #ffe28a;
+    }
+    .result-card {
+      position: absolute;
+      left: 22px;
+      top: 64px;
+      z-index: 4;
+      width: min(400px, calc(100% - 44px));
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 40px rgba(24,55,63,0.12);
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .result-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .result-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .result-pill.match {
+      background: rgba(46,138,99,0.14);
+      color: #1f7a54;
+    }
+    .result-pill.mismatch {
+      background: rgba(199,91,78,0.14);
+      color: #b4483c;
+    }
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      font-size: 0.88rem;
+      color: var(--ink);
+    }
+    .result-box {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(24,55,63,0.045);
+      border: 1px solid var(--line);
+      word-break: break-word;
+    }
+    .faded .node-card,
+    .faded.link {
+      opacity: 0.18;
+    }
+    .proof-link {
+      stroke: #d49b22 !important;
+      stroke-width: 4px !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 8px rgba(212,155,34,0.35));
+    }
+    .proof-link.active {
+      stroke: #2e8a63 !important;
+    }
+    .proof-node .node-card {
+      opacity: 1 !important;
+      stroke-width: 4px !important;
+      filter: drop-shadow(0 0 10px rgba(212,155,34,0.28));
+    }
+    .proof-node.active .node-card {
+      stroke: #2e8a63 !important;
+      filter: drop-shadow(0 0 14px rgba(46,138,99,0.38));
+    }
+    .proof-node.root-match .node-card {
+      stroke: #2e8a63 !important;
+      filter: drop-shadow(0 0 16px rgba(46,138,99,0.42));
+    }
+    .proof-node.root-mismatch .node-card {
+      stroke: #c75b4e !important;
+      filter: drop-shadow(0 0 16px rgba(199,91,78,0.42));
+      animation: pulseMismatch 1s ease-in-out 2;
+    }
+    @keyframes pulseMismatch {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
     .toolbar {
       position: absolute;
       right: 18px;
@@ -1704,6 +1832,8 @@ class VotingSystem {
       </div>
       <svg id="chart"></svg>
       <div id="tooltip" class="tooltip"></div>
+      <div id="proofCard" class="proof-card"></div>
+      <div id="resultCard" class="result-card"></div>
     </main>
   </div>
 
@@ -1721,6 +1851,8 @@ class VotingSystem {
     const svg = d3.select("#chart");
     const workspace = document.querySelector(".workspace");
     const tooltip = d3.select("#tooltip");
+    const proofCard = document.getElementById("proofCard");
+    const resultCard = document.getElementById("resultCard");
     const width = () => workspace.clientWidth;
     const height = () => Math.max(workspace.clientHeight, 620);
     svg.attr("viewBox", [0, 0, width(), height()]);
@@ -1729,6 +1861,8 @@ class VotingSystem {
     let currentContent = null;
     let lastSignature = "";
     let lastAnimationNonce = -1;
+    let currentNodeSelection = null;
+    let currentLinkSelection = null;
 
     const zoom = d3.zoom()
       .scaleExtent([0.35, 2.5])
@@ -1772,6 +1906,15 @@ class VotingSystem {
       }).on("mouseleave", () => {
         tooltip.style("opacity", 0).style("transform", "translateY(6px)");
       });
+    }
+
+    function clearProofOverlay() {
+      proofCard.classList.remove("visible");
+      proofCard.innerHTML = "";
+      resultCard.classList.remove("visible");
+      resultCard.innerHTML = "";
+      if (currentNodeSelection) currentNodeSelection.classed("faded", false).classed("proof-node", false).classed("active", false).classed("root-match", false).classed("root-mismatch", false);
+      if (currentLinkSelection) currentLinkSelection.classed("faded", false).classed("proof-link", false).classed("active", false);
     }
 
     function updateSummary(state) {
@@ -1866,6 +2009,7 @@ class VotingSystem {
         .join("path")
         .attr("class", d => d.target.data.deleted ? "link deleted-link" : "link")
         .attr("d", linkGen);
+      currentLinkSelection = content.selectAll(".link");
 
       const node = content.selectAll(".node")
         .data(root.descendants())
@@ -1889,6 +2033,7 @@ class VotingSystem {
         .text(d => d.data.name);
 
       attachTooltip(node);
+      currentNodeSelection = node;
     }
 
     function fitToScreen() {
@@ -1903,8 +2048,108 @@ class VotingSystem {
       );
     }
 
+    function shortHash(hash) {
+      return hash && hash.length > 24 ? `${hash.slice(0, 24)}..` : (hash || "-");
+    }
+
     function ensureTreeVisible() {
       workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function focusOnHash(targetHash) {
+      if (!currentNodeSelection) return;
+      const target = currentNodeSelection.filter(d => d.data.hash === targetHash).node();
+      if (!target) return;
+      const bbox = target.getBBox();
+      const scale = 1.15;
+      const tx = width() / 2 - (bbox.x + bbox.width / 2) * scale;
+      const ty = height() / 3 - (bbox.y + bbox.height / 2) * scale;
+      await svg.transition().duration(350).call(
+        zoom.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      ).end().catch(() => {});
+    }
+
+    function showProofStepCard(step, index, total) {
+      proofCard.innerHTML = `
+        <h3>Step ${index + 1} of ${total}</h3>
+        <div class="proof-line"><strong>Current</strong>: ${shortHash(step.currentHash)}</div>
+        <div class="proof-line"><strong>Sibling</strong>: ${shortHash(step.siblingHash)} (${step.direction === "R" ? "right" : "left"})</div>
+        <div class="proof-line"><strong>Parent</strong>: ${shortHash(step.parentHash)}</div>
+      `;
+      proofCard.classList.add("visible");
+    }
+
+    function showResultCard(verify) {
+      resultCard.innerHTML = `
+        <div class="result-pill ${verify.match ? "match" : "mismatch"}">${verify.match ? "Match" : "Mismatch"}</div>
+        <div class="result-grid">
+          <div class="result-box"><strong>Receipt</strong><br>${verify.receiptId}</div>
+          <div class="result-box"><strong>Computed Root</strong><br>${verify.computedRoot}</div>
+          <div class="result-box"><strong>Published Root</strong><br>${verify.publishedRoot}</div>
+          <div class="result-box"><strong>Meaning</strong><br>${verify.match ? "This ballot matches the published tree snapshot." : "This ballot no longer matches the published tree snapshot."}</div>
+        </div>
+      `;
+      resultCard.classList.add("visible");
+    }
+
+    async function animateVerification(verify) {
+      if (!verify || !verify.steps || !verify.steps.length || !currentNodeSelection || !currentLinkSelection) return;
+      ensureTreeVisible();
+      clearProofOverlay();
+      await focusOnHash(verify.leafHash);
+
+      currentNodeSelection.classed("faded", true);
+      currentLinkSelection.classed("faded", true);
+
+      currentNodeSelection
+        .filter(d => d.data.hash === verify.leafHash)
+        .classed("faded", false)
+        .classed("proof-node", true)
+        .classed("active", true);
+
+      let previousParentHash = null;
+      for (let i = 0; i < verify.steps.length; ++i) {
+        const step = verify.steps[i];
+        showProofStepCard(step, i, verify.steps.length);
+
+        currentNodeSelection.classed("active", false);
+        currentNodeSelection
+          .filter(d => d.data.hash === step.currentHash || d.data.hash === step.siblingHash || d.data.hash === step.parentHash)
+          .classed("faded", false)
+          .classed("proof-node", true)
+          .classed("active", true);
+
+        currentLinkSelection
+          .filter(d => d.target && d.target.data && d.target.data.hash === step.currentHash)
+          .classed("faded", false)
+          .classed("proof-link", true)
+          .classed("active", true);
+        currentLinkSelection
+          .filter(d => d.target && d.target.data && d.target.data.hash === step.siblingHash)
+          .classed("faded", false)
+          .classed("proof-link", true)
+          .classed("active", true);
+        if (previousParentHash) {
+          currentLinkSelection
+            .filter(d => d.target && d.target.data && d.target.data.hash === previousParentHash)
+            .classed("active", false);
+        }
+        previousParentHash = step.parentHash;
+
+        await focusOnHash(step.parentHash);
+        await new Promise(resolve => setTimeout(resolve, 900));
+      }
+
+      currentNodeSelection.classed("active", false);
+      currentNodeSelection
+        .filter(d => d.data.kind === "root")
+        .classed("faded", false)
+        .classed("proof-node", true)
+        .classed(verify.match ? "root-match" : "root-mismatch", true);
+
+      showResultCard(verify);
+      proofCard.classList.remove("visible");
     }
 
     async function playAnimation(state) {
@@ -1944,6 +2189,9 @@ class VotingSystem {
       const result = await response.json();
       document.getElementById("actionOutput").value = result.message || "";
       await refreshState(true);
+      if (result.verify) {
+        await animateVerification(result.verify);
+      }
       return result;
     }
 
@@ -2272,6 +2520,61 @@ class VotingSystem {
         return out.str();
     }
 
+    std::string verification_result_json(const std::string& receipt_id) const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!tree_built_) {
+            return action_result_json(false, "Build the Merkle Tree first.");
+        }
+        int idx = registry_.get_ballot_index(receipt_id);
+        if (idx < 0) {
+            return action_result_json(false, "Receipt ID not found.");
+        }
+
+        const Ballot& b = ballots_[idx];
+        const std::string leaf_hash = b.to_hash();
+        const auto proof = tree_.generate_proof(idx);
+
+        std::string current = leaf_hash;
+        std::ostringstream proof_json;
+        proof_json << "[";
+        for (size_t i = 0; i < proof.size(); ++i) {
+            const std::string& sibling = proof[i].first;
+            const std::string& direction = proof[i].second;
+            const std::string parent_hash = (direction == "R")
+                ? sha256(current + sibling)
+                : sha256(sibling + current);
+            if (i) proof_json << ",";
+            proof_json << "{"
+                       << "\"step\":" << (i + 1) << ","
+                       << "\"direction\":\"" << direction << "\","
+                       << "\"currentHash\":\"" << json_escape(current) << "\","
+                       << "\"siblingHash\":\"" << json_escape(sibling) << "\","
+                       << "\"parentHash\":\"" << json_escape(parent_hash) << "\""
+                       << "}";
+            current = parent_hash;
+        }
+        proof_json << "]";
+
+        const bool match = (current == last_built_root_);
+        std::ostringstream out;
+        out << "{"
+            << "\"ok\":true,"
+            << "\"message\":\"Verification trace ready.\","
+            << "\"verify\":{"
+            << "\"receiptId\":\"" << json_escape(receipt_id) << "\","
+            << "\"leafIndex\":" << idx << ","
+            << "\"leafHash\":\"" << json_escape(leaf_hash) << "\","
+            << "\"computedRoot\":\"" << json_escape(current) << "\","
+            << "\"publishedRoot\":\"" << json_escape(last_built_root_) << "\","
+            << "\"match\":" << (match ? "true" : "false") << ","
+            << "\"valid\":" << (b.valid ? "true" : "false") << ","
+            << "\"tampered\":" << (b.tampered ? "true" : "false") << ","
+            << "\"steps\":" << proof_json.str()
+            << "}"
+            << "}";
+        return out.str();
+    }
+
     std::string visualization_action_json(const std::string& path) {
         const std::string action = query_param(path, "cmd");
         try {
@@ -2314,8 +2617,14 @@ class VotingSystem {
                 const std::string output = capture_stdout([&]() {
                     this->verify_vote(receipt_id);
                 });
-                const bool ok = output.find("[OK]") != std::string::npos || output.find("MATCH") != std::string::npos;
-                return action_result_json(ok, output.empty() ? "Verification requested." : output);
+                std::string verify_json = verification_result_json(receipt_id);
+                const std::string marker = "\"message\":\"Verification trace ready.\"";
+                const size_t pos = verify_json.find(marker);
+                if (pos != std::string::npos) {
+                    verify_json.replace(pos, marker.size(),
+                        "\"message\":\"" + json_escape(output.empty() ? "Verification requested." : output) + "\"");
+                }
+                return verify_json;
             }
             if (action == "tamper") {
                 const std::string receipt_id = query_param(path, "receipt_id");
