@@ -3,8 +3,12 @@
 #include <string>
 #include <cassert>
 #include <sstream>
-#include "../merkle_tree.hpp"
-#include "../voting_system.hpp"
+#include "../header/merkle_tree.hpp"
+#include "../header/voting_system.hpp"
+#include "../header/merkle_mountain_range.hpp"
+
+// Forward declaration for newly added test
+void test_mmr_snapshot_and_rollback();
 
 // Simple test framework macros
 int tests_run = 0;
@@ -287,6 +291,7 @@ int main() {
     RUN_TEST(test_voting_tamper_proof_snapshot);
     RUN_TEST(test_voting_tamper_marker_and_original_vote_tracking);
     RUN_TEST(test_tamper_flags_clear_after_invalidate_and_delete);
+    RUN_TEST(test_mmr_snapshot_and_rollback);
     RUN_TEST(test_voting_system_integration);
 
     std::cout << "\n========================================\n";
@@ -296,4 +301,30 @@ int main() {
     std::cout << "========================================\n";
 
     return (tests_run == tests_passed) ? 0 : 1;
+}
+void test_mmr_snapshot_and_rollback() {
+    MerkleMMR mmr;
+
+    // append 6 leaves
+    for (int i = 0; i < 6; ++i) mmr.append(std::to_string(i));
+    ASSERT_EQ(mmr.leaf_count(), 6);
+
+    // take snapshot
+    mmr.take_snapshot();
+    ASSERT_EQ(mmr.snapshot_count(), 1);
+    std::string snap_root = mmr.get_root();
+    size_t snap_count = mmr.leaf_count();
+
+    // append two more leaves (simulate unexpected change)
+    mmr.append("6");
+    mmr.append("7");
+    ASSERT_TRUE(mmr.leaf_count() > snap_count);
+
+    // should be detected as tampered (count mismatch)
+    ASSERT_TRUE(mmr.is_tampered_since_snapshot(0));
+
+    // rollback to snapshot and verify
+    mmr.rollback_to_snapshot(0);
+    ASSERT_EQ(mmr.leaf_count(), snap_count);
+    ASSERT_EQ(mmr.get_root(), snap_root);
 }

@@ -36,63 +36,61 @@ public:
     // Returns false (no-op) if the voter is already registered.
     // O(1) average — single hash table insert
     bool register_voter(const std::string& voter_id) {
-        if (voters_.count(voter_id)) return false;
-        voters_[voter_id] = false;
-        return true;
+        // implemented in voter_registry.cpp
+        return register_voter_impl(voter_id);
     }
 
     // Check whether a voter ID exists in the registry.
     // O(1) average — hash table lookup
     bool is_registered(const std::string& voter_id) const {
-        return voters_.count(voter_id) > 0;
+        return is_registered_impl(voter_id);
     }
 
     // Check whether a registered voter has already voted.
     // O(1) average — hash table lookup
     bool has_voted(const std::string& voter_id) const {
-        auto it = voters_.find(voter_id);
-        if (it == voters_.end()) return false;
-        return it->second;
+        return has_voted_impl(voter_id);
     }
 
     // Mark a voter's status as voted.
     // O(1) average — hash table update
     void mark_voted(const std::string& voter_id) {
-        voters_[voter_id] = true;
+        mark_voted_impl(voter_id);
     }
 
     // Unmark a voter's status (allow them to vote again).
     // O(1) average — hash table update
     void unmark_voted(const std::string& voter_id) {
-        voters_[voter_id] = false;
+        unmark_voted_impl(voter_id);
     }
 
     // Store the mapping: receipt_id  →  ballot_index.
     // Called immediately after a ballot is appended to the ballot list.
     // O(1) average — hash table insert
     void store_receipt(const std::string& receipt_id, int ballot_index) {
-        receipt_map_[receipt_id] = ballot_index;
+        store_receipt_impl(receipt_id, ballot_index);
     }
 
     // Retrieve the ballot index for a given receipt ID.
     // Returns -1 if the receipt ID is not found.
     // O(1) average — hash table lookup
     int get_ballot_index(const std::string& receipt_id) const {
-        auto it = receipt_map_.find(receipt_id);
-        if (it == receipt_map_.end()) return -1;
-        return it->second;
+        return get_ballot_index_impl(receipt_id);
     }
 
-    int voter_count()  const { return static_cast<int>(voters_.size()); }
-    int receipt_count() const { return static_cast<int>(receipt_map_.size()); }
+    int voter_count()  const;
+    int receipt_count() const;
 
     // Print the current registry state (for demo/debug).
-    void print_registry() const {
-        std::cout << "\n  Voter Registry  (" << voter_count() << " registered)\n";
-        std::cout << "  " << std::string(44, '-') << "\n";
-        for (const auto& kv : voters_)
-            std::cout << "    " << kv.first
-                      << "  --  " << (kv.second ? "VOTED" : "eligible") << "\n";
-        std::cout << "\n";
-    }
+    void print_registry() const;
+
+private:
+    // implementation helpers defined in voter_registry.cpp
+    bool register_voter_impl(const std::string& voter_id);
+    bool is_registered_impl(const std::string& voter_id) const;
+    bool has_voted_impl(const std::string& voter_id) const;
+    void mark_voted_impl(const std::string& voter_id);
+    void unmark_voted_impl(const std::string& voter_id);
+    void store_receipt_impl(const std::string& receipt_id, int ballot_index);
+    int get_ballot_index_impl(const std::string& receipt_id) const;
 };

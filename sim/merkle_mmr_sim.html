@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live MMR Voting Simulation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --leaf: #10b981;
+            --internal: #3b82f6;
+            --peak: #f59e0b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            padding: 1rem 1.5rem;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+
+        h1 { font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+        h1 span { font-size: 0.875rem; padding: 0.2rem 0.5rem; background: var(--primary); border-radius: 4px; font-weight: 700; }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: rgba(255,255,255,0.1);
+        }
+        .status-badge.running { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.5); }
+        .status-badge.tampered { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); }
+
+        /* Main Layout */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 280px 1fr 300px;
+            grid-template-rows: 1fr;
+            overflow: hidden;
+        }
+
+        /* Panels */
+        .panel {
+            background: var(--panel-bg);
+            border-right: 1px solid var(--border);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(10px);
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+        }
+
+        .panel-content { padding: 1rem; overflow-y: auto; flex: 1; }
+
+        /* Controls */
+        .control-group { margin-bottom: 1.5rem; }
+        .control-group label { display: block; font-size: 0.875rem; color: var(--text-dim); margin-bottom: 0.5rem; }
+        
+        input[type="number"], input[type="text"], select {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-family: inherit;
+            margin-bottom: 0.5rem;
+        }
+
+        button {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-bottom: 0.5rem;
+        }
+        button:hover { background: rgba(255,255,255,0.1); }
+        button.primary { background: var(--primary); border-color: var(--primary); }
+        button.primary:hover { background: var(--primary-hover); }
+        button.danger { background: var(--danger); border-color: var(--danger); }
+        button.success { background: var(--success); border-color: var(--success); }
+
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+
+        /* Visualization Area */
+        #viz-container {
+            position: relative;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            overflow: hidden;
+        }
+        
+        #viz-overlay {
+            position: absolute;
+            top: 1rem; left: 1rem;
+            pointer-events: none;
+        }
+        .viz-stat { font-size: 0.875rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+        .viz-stat span { font-family: monospace; color: var(--text); font-size: 1rem; }
+
+        /* SVG Styles */
+        .node circle { fill: var(--bg); stroke-width: 2px; }
+        .node text { font-family: monospace; font-size: 10px; fill: var(--text); text-anchor: middle; pointer-events: none; }
+        .link { fill: none; stroke: var(--border); stroke-width: 1.5px; }
+        
+        .node.leaf circle { stroke: var(--leaf); }
+        .node.internal circle { stroke: var(--internal); }
+        .node.peak circle { stroke: var(--peak); fill: rgba(245, 158, 11, 0.1); }
+        .node.tampered circle { stroke: var(--danger); fill: rgba(239, 68, 68, 0.2); }
+        .node.highlight circle { stroke: var(--warning); stroke-width: 3px; fill: rgba(245, 158, 11, 0.3); }
+        .link.highlight { stroke: var(--warning); stroke-width: 3px; }
+
+        /* Snapshot Gallery */
+        .snapshot-card {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .snapshot-card.tampered { border-color: var(--danger); background: rgba(239,68,68,0.1); }
+        .snapshot-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.875rem; }
+        .snapshot-badge { padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .badge-pass { background: rgba(16,185,129,0.2); color: #34d399; }
+        .badge-fail { background: rgba(239,68,68,0.2); color: #f87171; }
+        .snapshot-detail { font-family: monospace; font-size: 0.75rem; color: var(--text-dim); word-break: break-all; }
+
+        /* Bottom Bar */
+        footer {
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+        
+        .stat-box { display: flex; flex-direction: column; }
+        .stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; font-family: monospace; }
+        
+        .tally-container { flex: 1; display: flex; gap: 1rem; overflow-x: auto; }
+        .tally-item {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .tally-cand { font-size: 0.875rem; font-weight: 500; }
+        .tally-count { font-family: monospace; font-size: 1.125rem; font-weight: 700; color: var(--primary); }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 100%; max-width: 500px;
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+        }
+        .modal.large { max-width: 800px; }
+        .modal-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-weight: 600; font-size: 1.125rem; }
+        .modal-close { cursor: pointer; color: var(--text-dim); background: none; border: none; font-size: 1.5rem; line-height: 1; padding: 0; width: auto; }
+        .modal-close:hover { color: var(--text); background: none; }
+        .modal-body { padding: 1.5rem; overflow-y: auto; }
+        .modal-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+        th { color: var(--text-dim); font-weight: 500; background: rgba(0,0,0,0.2); }
+        td { font-family: monospace; }
+        tr:hover td { background: rgba(255,255,255,0.05); cursor: pointer; }
+
+        /* Utilities */
+        .hidden { display: none !important; }
+        .text-danger { color: var(--danger); }
+        .text-success { color: var(--success); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>MMR <span>Simulation</span></h1>
+        <div id="sys-status" class="status-badge">IDLE</div>
+    </header>
+
+    <main>
+        <!-- Left Panel: Configuration & Controls -->
+        <aside class="panel">
+            <div class="panel-header">Configuration</div>
+            <div class="panel-content">
+                <div class="control-group">
+                    <label>Dataset File</label>
+                    <input type="text" id="cfg-path" value="dataset.csv">
+                    <button id="btn-load">Load Dataset</button>
+                </div>
+                
+                <div class="control-group" style="border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <label>Audit Interval (Votes)</label>
+                    <input type="number" id="cfg-interval" value="10" min="1">
+                    <label>Max Votes (Optional)</label>
+                    <input type="number" id="cfg-max" placeholder="e.g. 50">
+                    <button id="btn-config" class="primary">Apply Config</button>
+                </div>
+
+                <div class="panel-header" style="margin: 1rem -1rem; border-top: 1px solid var(--border);">Controls</div>
+                
+                <div class="btn-grid">
+                    <button id="btn-step">Step (1 Vote)</button>
+                    <button id="btn-run" class="success">Run Auto</button>
+                    <button id="btn-stop">Stop</button>
+                    <button id="btn-reset" class="danger">Reset</button>
+                </div>
+
+                <div style="margin-top: 1.5rem;">
+                    <button id="btn-vote-modal" style="border-color: var(--primary); color: var(--primary);">+ Manual Vote</button>
+                    <button id="btn-verify-modal">Audit / Verify Path</button>
+                    <button id="btn-tamper-modal" class="danger">Inject Tamper (Leaf)</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center: Visualization -->
+        <section id="viz-container">
+            <div id="viz-overlay">
+                <div class="viz-stat">Root Hash: <span id="viz-root">...</span></div>
+                <div class="viz-stat">Peaks: <span id="viz-peaks">0</span></div>
+            </div>
+            <svg id="mmr-svg" width="100%" height="100%"></svg>
+        </section>
+
+        <!-- Right Panel: Snapshot Gallery -->
+        <aside class="panel">
+            <div class="panel-header">Audit Gallery</div>
+            <div class="panel-content" id="snapshot-container">
+                <!-- Snapshots injected here -->
+                <div style="color: var(--text-dim); font-size: 0.875rem; text-align: center; margin-top: 2rem;">No audits yet. Run simulation to generate snapshots.</div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Bottom Bar: Stats -->
+    <footer>
+        <div class="stat-box">
+            <div class="stat-label">Total Votes</div>
+            <div class="stat-value" id="stat-total">0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Verified (Last Audit)</div>
+            <div class="stat-value text-success" id="stat-verified">0</div>
+        </div>
+        <div style="width: 1px; height: 30px; background: var(--border); margin: 0 1rem;"></div>
+        
+        <div class="tally-container" id="tally-container">
+            <!-- Tally injected here -->
+        </div>
+    </footer>
+
+    <!-- Modals -->
+    
+    <!-- Vote Modal -->
+    <div class="modal-overlay" id="modal-vote">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Cast Manual Vote</div>
+                <button class="modal-close" onclick="closeModal('modal-vote')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="control-group">
+                    <label>Voter ID</label>
+                    <input type="text" id="manual-voter" value="MANUAL-001">
+                </div>
+                <div class="control-group">
+                    <label>Select Candidate</label>
+                    <select id="manual-candidate">
+                        <!-- populated dynamically -->
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal('modal-vote')" style="width: auto;">Cancel</button>
+                <button id="btn-submit-vote" class="primary" style="width: auto;">Cast Vote</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tamper Modal -->
+    <div class="modal-overlay" id="modal-tamper">
+        <div class="modal large">
+            <div class="modal-header">
+                <div class="modal-title">Inject Data Corruption (Tamper)</div>
+                <button class="modal-close" onclick="closeModal('modal-tamper')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.875rem; color: var(--text-dim); margin-bottom: 1rem;">Select a cast vote to tamper with. This will modify the leaf hash directly without updating ancestors, creating an inconsistency that the next interval audit should catch and rollback.</p>
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px;">
+                    <table id="tamper-table">
+                        <thead>
+                            <tr><th>Index</th><th>Voter ID</th><th>Candidate</th><th>Leaf Hash (Prefix)</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div id="tamper-action-area" class="hidden" style="margin-top: 1rem; padding: 1rem; background: rgba(239,68,68,0.1); border: 1px solid var(--danger); border-radius: 4px;">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Tamper Vote #<span id="tamper-sel-idx"></span></div>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <span style="font-family: monospace;" id="tamper-sel-info"></span>
+                        <span style="color: var(--text-dim);">➜ Change to:</span>
+                        <select id="tamper-candidate" style="width: auto; margin: 0;"></select>
+                        <button id="btn-submit-tamper" class="danger" style="width: auto; margin: 0;">Apply Corruption</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Verify Modal -->
+    <div class="modal-overlay" id="modal-verify">
+        <div class="modal large">
+            <div class="modal-header">
+                <div class="modal-title">Verify Vote Path</div>
+                <button class="modal-close" onclick="closeModal('modal-verify')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.875rem; color: var(--text-dim); margin-bottom: 1rem;">Select a vote to request its Merkle proof. The backend will return the intra-peak sibling hashes and peak bagging hashes required to reconstruct the root.</p>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 1rem;">
+                    <table id="verify-table">
+                        <thead>
+                            <tr><th>Index</th><th>Voter ID</th><th>Candidate</th><th>Leaf Hash</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div id="verify-result-area" class="hidden" style="padding: 1rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div style="font-weight: 600;">Proof Result for Vote #<span id="vrf-idx"></span></div>
+                        <div id="vrf-badge" class="snapshot-badge"></div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-family: monospace; font-size: 0.875rem;">
+                        <div>
+                            <div style="color: var(--text-dim);">Reconstructed Root:</div>
+                            <div id="vrf-root" style="color: var(--primary);"></div>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-dim);">Proof Steps:</div>
+                            <div id="vrf-steps"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Global State ---
+        let simState = {};
+        let candidates = [];
+        let pollingInterval = null;
+        let lastLeafCount = -1;
+        let manualVoteIndex = 1;
+
+        // --- D3 Setup ---
+        const svg = d3.select("#mmr-svg");
+        const svgGroup = svg.append("g");
+        
+        // Zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (e) => svgGroup.attr("transform", e.transform));
+        svg.call(zoom);
+
+        // --- API Helpers ---
+        async function apiCall(endpoint) {
+            try {
+                const res = await fetch(endpoint);
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                return await res.json();
+            } catch (e) {
+                console.error("API Error on", endpoint, e);
+                return null;
+            }
+        }
+
+        // --- UI Updates ---
+        async function updateDashboard() {
+            const state = await apiCall('/api/state');
+            if (!state) {
+                document.getElementById('sys-status').textContent = "OFFLINE";
+                document.getElementById('sys-status').className = "status-badge tampered";
+                return;
+            }
+            simState = state;
+
+            // Status badge
+            const statusEl = document.getElementById('sys-status');
+            if (state.tampered) {
+                statusEl.textContent = "TAMPER DETECTED";
+                statusEl.className = "status-badge tampered";
+            } else if (state.running) {
+                statusEl.textContent = "RUNNING";
+                statusEl.className = "status-badge running";
+            } else {
+                statusEl.textContent = "IDLE";
+                statusEl.className = "status-badge";
+            }
+
+            // Stats
+            document.getElementById('stat-total').textContent = state.leafCount;
+            document.getElementById('stat-verified').textContent = state.verifiedCount;
+            document.getElementById('viz-root').textContent = state.root || "empty";
+            document.getElementById('viz-peaks').textContent = state.peakCount;
+
+            // Tally
+            const tallyContainer = document.getElementById('tally-container');
+            tallyContainer.innerHTML = '';
+            for (const [cand, count] of Object.entries(state.tally || {})) {
+                tallyContainer.innerHTML += `
+                    <div class="tally-item">
+                        <div class="tally-cand">${cand}</div>
+                        <div class="tally-count">${count}</div>
+                    </div>
+                `;
+            }
+
+            // Fetch candidates list if needed
+            if (candidates.length === 0 && state.leafCount > 0) {
+                const cands = await apiCall('/api/candidates');
+                if (cands) {
+                    candidates = cands;
+                    populateCandidateDropdowns();
+                }
+            }
+
+            // Update Gallery and Viz if changed
+            if (state.leafCount !== lastLeafCount || state.tampered) {
+                updateGallery();
+                updateVisualization();
+                lastLeafCount = state.leafCount;
+            }
+        }
+
+        async function updateGallery() {
+            const logs = await apiCall('/api/auditlog');
+            const container = document.getElementById('snapshot-container');
+            if (!logs || logs.length === 0) {
+                container.innerHTML = `<div style="color: var(--text-dim); font-size: 0.875rem; text-align: center; margin-top: 2rem;">No audits yet.</div>`;
+                return;
+            }
+            
+            // Reverse to show newest first
+            logs.reverse();
+            
+            container.innerHTML = logs.map(l => `
+                <div class="snapshot-card ${l.tamper ? 'tampered' : ''}">
+                    <div class="snapshot-header">
+                        <span>Audit #${l.num} (Votes: ${l.leaves})</span>
+                        <span class="snapshot-badge ${l.tamper ? 'badge-fail' : 'badge-pass'}">
+                            ${l.tamper ? 'ROLLBACK' : 'PASSED'}
+                        </span>
+                    </div>
+                    <div class="snapshot-detail">Root: ${l.root}...</div>
+                    ${l.tamper ? `<div class="snapshot-detail text-danger" style="margin-top:4px">Invalidated from: ${l.invalidFrom}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        // --- D3 Visualization ---
+        async function updateVisualization() {
+            const treeData = await apiCall('/api/tree');
+            if (!treeData || !treeData.peaks || treeData.peaks.length === 0) {
+                svgGroup.selectAll("*").remove();
+                return;
+            }
+
+            // We render a forest: each peak is a tree.
+            // We'll arrange them horizontally.
+            svgGroup.selectAll("*").remove(); // Simple full redraw for now
+
+            const margin = {top: 40, right: 20, bottom: 40, left: 20};
+            let currentX = margin.left;
+            const nodeRadius = 14;
+
+            // Render each peak
+            for (let i = 0; i < treeData.peaks.length; i++) {
+                const peakData = treeData.peaks[i];
+                if (!peakData) continue;
+
+                // Create hierarchy
+                const root = d3.hierarchy(peakData, d => {
+                    const children = [];
+                    if (d.l) children.push(d.l);
+                    if (d.r) children.push(d.r);
+                    return children.length ? children : null;
+                });
+
+                // Peak height dictates width requirement
+                const treeWidth = Math.pow(2, peakData.ht) * 40;
+                const treeHeight = peakData.ht * 60;
+
+                const treeLayout = d3.tree().size([treeWidth, treeHeight]);
+                treeLayout(root);
+
+                // Shift the tree to currentX
+                const g = svgGroup.append("g")
+                    .attr("transform", `translate(${currentX}, ${margin.top})`);
+
+                // Draw links
+                g.selectAll(".link")
+                    .data(root.links())
+                    .enter().append("path")
+                    .attr("class", "link")
+                    .attr("d", d3.linkVertical()
+                        .x(d => d.x)
+                        .y(d => d.y)
+                    );
+
+                // Draw nodes
+                const node = g.selectAll(".node")
+                    .data(root.descendants())
+                    .enter().append("g")
+                    .attr("class", d => {
+                        let cls = "node ";
+                        if (!d.children) cls += "leaf ";
+                        else if (d.depth === 0) cls += "peak ";
+                        else cls += "internal ";
+                        return cls;
+                    })
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+
+                node.append("circle")
+                    .attr("r", nodeRadius);
+
+                node.append("text")
+                    .attr("dy", "0.3em")
+                    .text(d => d.data.h.substring(0, 4) + "..");
+
+                currentX += treeWidth + 40; // spacing between peaks
+            }
+
+            // Auto-center (if it's not too wide, or just fit to screen)
+            const bounds = svgGroup.node().getBBox();
+            const fullWidth = bounds.width + margin.left * 2;
+            const fullHeight = bounds.height + margin.top * 2;
+            
+            const svgEl = document.getElementById('mmr-svg');
+            const cw = svgEl.clientWidth;
+            const ch = svgEl.clientHeight;
+
+            const scale = Math.min(cw / fullWidth, ch / fullHeight, 1);
+            const tx = (cw - fullWidth * scale) / 2;
+            const ty = (ch - fullHeight * scale) / 2 + margin.top;
+
+            // Only animate transition if we are running smoothly
+            svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        }
+
+        function highlightProofPath(proof) {
+            // Highlighting is complex on full redraw, for a simple implementation
+            // we will just flash a message or re-fetch tree and color it.
+            // Given time constraints, we'll visually show it in the modal.
+        }
+
+        // --- Event Listeners & Actions ---
+        
+        function startPolling() {
+            if (!pollingInterval) pollingInterval = setInterval(updateDashboard, 500);
+        }
+
+        document.getElementById('btn-config').addEventListener('click', async () => {
+            const mv = document.getElementById('cfg-max').value || -1;
+            const iv = document.getElementById('cfg-interval').value || 10;
+            await apiCall(`/api/action?cmd=configure&votes=${mv}&interval=${iv}`);
+            updateDashboard();
+        });
+
+        document.getElementById('btn-load').addEventListener('click', async () => {
+            const p = document.getElementById('cfg-path').value;
+            await apiCall(`/api/action?cmd=load&path=${encodeURIComponent(p)}`);
+            updateDashboard();
+        });
+
+        document.getElementById('btn-step').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=step');
+            updateDashboard();
+        });
+
+        document.getElementById('btn-run').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=run&rate=200');
+            updateDashboard();
+        });
+
+        document.getElementById('btn-stop').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=stop');
+            updateDashboard();
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', async () => {
+            await apiCall('/api/action?cmd=reset');
+            candidates = [];
+            lastLeafCount = -1;
+            manualVoteIndex = 1;
+            updateDashboard();
+        });
+
+        // --- Modals ---
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function populateCandidateDropdowns() {
+            const opts = candidates.map(c => `<option value="${c}">${c}</option>`).join('');
+            document.getElementById('manual-candidate').innerHTML = opts;
+            document.getElementById('tamper-candidate').innerHTML = opts;
+        }
+
+        // Manual Vote
+        document.getElementById('btn-vote-modal').addEventListener('click', () => {
+            document.getElementById('manual-voter').value = `MANUAL-${String(manualVoteIndex).padStart(3, '0')}`;
+            openModal('modal-vote');
+        });
+
+        document.getElementById('btn-submit-vote').addEventListener('click', async () => {
+            const v = document.getElementById('manual-voter').value;
+            const c = document.getElementById('manual-candidate').value;
+            if(!v || !c) return;
+            await apiCall(`/api/action?cmd=vote&voter=${encodeURIComponent(v)}&candidate=${encodeURIComponent(c)}`);
+            manualVoteIndex++;
+            closeModal('modal-vote');
+            updateDashboard();
+        });
+
+        // Tamper
+        document.getElementById('btn-tamper-modal').addEventListener('click', async () => {
+            const votes = await apiCall('/api/votes');
+            const tbody = document.querySelector('#tamper-table tbody');
+            tbody.innerHTML = votes.map(v => `
+                <tr onclick="selectTamper(${v.i}, '${v.voter}', '${v.candidate}')">
+                    <td>${v.i}</td><td>${v.voter}</td><td>${v.candidate}</td><td>${v.hash}...</td>
+                </tr>
+            `).join('');
+            document.getElementById('tamper-action-area').classList.add('hidden');
+            openModal('modal-tamper');
+        });
+
+        let tamperSelIdx = -1;
+        window.selectTamper = function(idx, voter, cand) {
+            tamperSelIdx = idx;
+            document.getElementById('tamper-sel-idx').textContent = idx;
+            document.getElementById('tamper-sel-info').textContent = `${voter} (${cand})`;
+            document.getElementById('tamper-action-area').classList.remove('hidden');
+        };
+
+        document.getElementById('btn-submit-tamper').addEventListener('click', async () => {
+            if (tamperSelIdx < 0) return;
+            const c = document.getElementById('tamper-candidate').value;
+            await apiCall(`/api/action?cmd=tamper_leaf&index=${tamperSelIdx}&candidate=${encodeURIComponent(c)}`);
+            closeModal('modal-tamper');
+            updateDashboard();
+        });
+
+        // Verify
+        document.getElementById('btn-verify-modal').addEventListener('click', async () => {
+            const votes = await apiCall('/api/votes');
+            const tbody = document.querySelector('#verify-table tbody');
+            tbody.innerHTML = votes.map(v => `
+                <tr onclick="runVerify(${v.i})">
+                    <td>${v.i}</td><td>${v.voter}</td><td>${v.candidate}</td><td>${v.hash}...</td>
+                </tr>
+            `).join('');
+            document.getElementById('verify-result-area').classList.add('hidden');
+            openModal('modal-verify');
+        });
+
+        window.runVerify = async function(idx) {
+            const res = await apiCall(`/api/verify?index=${idx}`);
+            const area = document.getElementById('verify-result-area');
+            area.classList.remove('hidden');
+            document.getElementById('vrf-idx').textContent = idx;
+            
+            const badge = document.getElementById('vrf-badge');
+            if (res.ok && res.verified) {
+                badge.className = 'snapshot-badge badge-pass';
+                badge.textContent = 'VERIFIED';
+            } else {
+                badge.className = 'snapshot-badge badge-fail';
+                badge.textContent = 'FAILED';
+            }
+
+            document.getElementById('vrf-root').textContent = res.ok ? res.root : 'Error';
+            
+            if (res.ok && res.steps) {
+                const stepsHtml = res.steps.map((s, i) => `[${i}] ${s.dir} : ${s.sibling}`).join('<br>');
+                document.getElementById('vrf-steps').innerHTML = stepsHtml;
+            } else {
+                document.getElementById('vrf-steps').innerHTML = '-';
+            }
+        };
+
+        // Init
+        startPolling();
+
+    </script>
+</body>
+</html>

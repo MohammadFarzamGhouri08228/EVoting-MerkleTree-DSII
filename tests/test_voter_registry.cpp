@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cassert>
-#include "../voter_registry.hpp"
+#include "../header/voter_registry.hpp"
 
 void test_registration_and_lookup() {
     VoterRegistry registry;

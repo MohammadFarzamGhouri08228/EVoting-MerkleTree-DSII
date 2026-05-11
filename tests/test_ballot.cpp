@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cassert>
-#include "../ballot.hpp"
+#include "../header/ballot.hpp"
 
 void test_canonical_string() {
     Ballot b;

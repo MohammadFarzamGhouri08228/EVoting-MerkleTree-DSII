@@ -25,10 +25,10 @@
 #include <cstdlib>
 #include <memory>
 #include <mutex>
-#include "ballot.hpp"
-#include "voter_registry.hpp"
-#include "merkle_tree.hpp"
-#include "live_visualization_server.hpp"
+#include "header/ballot.hpp"
+#include "header/voter_registry.hpp"
+#include "header/merkle_tree.hpp"
+#include "header/live_visualization_server.hpp"
 
 class VotingSystem {
 
