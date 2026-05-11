@@ -94,7 +94,7 @@ EVoting-MerkleTree-DSII/
 ### Compile
 
 ```bash
-g++ -std=c++17 -O2 -o evoteverify main.cpp -lws2_32
+g++ -std=c++17 -O2 -I. -o evoteverify.exe main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -lws2_32
 ```
 
 Windows note:
@@ -102,12 +102,12 @@ If you are using MinGW/MSYS2, `-lws2_32` is required because the live visualizat
 
 Linux / macOS:
 ```bash
-g++ -std=c++17 -O2 -o evoteverify main.cpp
+g++ -std=c++17 -O2 -I. -o evoteverify main.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -pthread
 ```
 
 With MSVC:
 ```bash
-cl /std:c++17 /EHsc /O2 /Fe:evoteverify.exe main.cpp
+cl /std:c++17 /EHsc /O2 /I. /Fe:evoteverify.exe main.cpp src\\ballot.cpp src\\voter_registry.cpp src\\merkle_tree.cpp src\\live_visualization_server.cpp ws2_32.lib
 ```
 
 ### Run
@@ -145,7 +145,7 @@ Important:
 This runs a hardcoded, perfectly timed scenario designed for a live viva. It demonstrates all core DSII concepts (Hash Table lookups, Merkle Tree construction, O(log n) proofs, and tamper detection) without requiring any manual typing.
 
 ```bash
-g++ -std=c++17 -O2 -o demo demo.cpp
+g++ -std=c++17 -O2 -I. -o demo.exe src/demo.cpp src/ballot.cpp src/voter_registry.cpp src/merkle_tree.cpp src/live_visualization_server.cpp -lws2_32
 ./demo.exe
 ```
 

@@ -228,8 +228,11 @@ void MerkleTree::print_tree_visual() const {
         const bool is_root = (li == 0);
         const bool is_leaves = (li == total_lvls - 1);
 
-        std::string title = is_root ? "Level 0 (Root)"\n+                          : is_leaves ? "Level " + std::to_string(li) + " (Leaves)"
-                                      : "Level " + std::to_string(li);
+        std::string title = is_root
+            ? "Level 0 (Root)"
+            : is_leaves
+                ? "Level " + std::to_string(li) + " (Leaves)"
+                : "Level " + std::to_string(li);
 
         std::cout << "  " << title << " - " << nodes.size()
                   << " node" << (nodes.size() == 1 ? "" : "s") << "\n";

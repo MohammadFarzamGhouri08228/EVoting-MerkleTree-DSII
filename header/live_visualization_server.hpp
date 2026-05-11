@@ -27,6 +27,7 @@ public:
                StateProvider state_provider,
                int preferred_port = 8080);
     void stop();
+    bool is_running() const { return running_.load(); }
     std::string url() const;
 
 private:

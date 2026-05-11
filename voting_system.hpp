@@ -775,6 +775,13 @@ class VotingSystem {
         The <strong>root</strong> is the final fingerprint of the whole election tree. Every ballot rolls upward into it, so if any leaf changes, the root hash changes too.
       </div>
       <div>
+        <h2>Data Source</h2>
+        <div class="helper-copy">
+          <strong id="sourceLabel">-</strong><br>
+          <span id="sourceDetail">-</span>
+        </div>
+      </div>
+      <div>
         <div class="stat"><span>Root hash</span><strong id="rootHash">-</strong></div>
         <div class="stat"><span>Total levels</span><strong id="levelCount">-</strong></div>
         <div class="stat"><span>Leaf nodes</span><strong id="leafCount">-</strong></div>
@@ -808,6 +815,16 @@ class VotingSystem {
     </main>
   </div>
   <script>
+    if (typeof d3 === "undefined") {
+      document.body.innerHTML = `
+        <div style="padding:24px;font-family:Segoe UI,Tahoma,sans-serif;color:#132a2f;">
+          <h2>Visualization Dependency Failed To Load</h2>
+          <p>This page needs D3.js from jsDelivr, but your browser could not load it.</p>
+          <p>Try refreshing once, checking whether the network blocks <code>cdn.jsdelivr.net</code>, or use the ASCII tree view from option 4 for now.</p>
+        </div>`;
+      throw new Error("D3 failed to load");
+    }
+
     const svg = d3.select("#chart");
     const workspace = document.querySelector(".workspace");
     const tooltip = d3.select("#tooltip");
@@ -881,8 +898,10 @@ class VotingSystem {
       const treeData = state.tree;
       const summary = state.summary;
       const root = d3.hierarchy(treeData);
-      document.getElementById("sourceLabel").textContent = summary.sourceLabel || "-";
-      document.getElementById("sourceDetail").textContent = summary.sourceDetail || "-";
+      const sourceLabel = document.getElementById("sourceLabel");
+      const sourceDetail = document.getElementById("sourceDetail");
+      if (sourceLabel) sourceLabel.textContent = summary.sourceLabel || "-";
+      if (sourceDetail) sourceDetail.textContent = summary.sourceDetail || "-";
       document.getElementById("rootHash").textContent = treeData.shortHash || "-";
       document.getElementById("levelCount").textContent = String(root.height + 1);
       document.getElementById("leafCount").textContent = String(root.leaves().length);
