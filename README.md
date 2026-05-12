@@ -19,6 +19,11 @@ The goal of the project is to show how data structures can be used to protect vo
 - Simulate tampering and show how verification fails
 - Run a live browser visualization for the Merkle Tree, MMR, and Sparse Merkle Tree views
 
+## Frontend and Backend
+
+- **Backend:** The backend is written in C++17. It handles voter registration, ballot hashing, Merkle Tree logic, MMR simulation, Sparse Merkle Tree checks, proof generation, verification, and the local HTTP server used for visualization.
+- **Frontend:** The frontend is the browser-based visualization layer served locally by the C++ backend. It displays the Merkle Tree, MMR simulation, proof paths, and live verification state through interactive web pages.
+
 ## Compile
 
 ### Main voting system
